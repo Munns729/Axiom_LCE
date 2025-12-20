@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <title>Axiom LCE</title>
+    <!-- Office JavaScript API -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 100px;
+            font-family: monospace;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #005a9e;
+        }
+
+        .warning {
+            border-left: 4px solid #d13438;
+            padding: 10px;
+            background: #f3f2f1;
+            margin-bottom: 8px;
+        }
+
+        .warning-title {
+            font-weight: bold;
+            color: #d13438;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Axiom Verification</h2>
+    <p>Define your Playbook (JSON):</p>
+    <textarea id="playbook">{
+  "governing_law": "New York"
+}</textarea>
+
+    <button id="run">Verify Logic</button>
+
+    <div id="status" style="margin-top:10px; font-style:italic;"></div>
+    <div id="results" style="margin-top:20px;"></div>
+
+    <script type="text/javascript" src="taskpane.js"></script>
+</body>
+
+</html>

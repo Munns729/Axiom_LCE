@@ -45,4 +45,17 @@ class SpineClient
      
      connection.post("/contract/#{contract_id}/refactor", body.to_json, 'Content-Type' => 'application/json')
   end
+
+  def self.analyze_logic(file_path, original_filename, playbook_json)
+    payload = {
+      file: Faraday::Multipart::FilePart.new(
+        file_path,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        original_filename
+      ),
+      playbook: playbook_json
+    }
+    
+    connection.post('/analyze_logic', payload)
+  end
 end

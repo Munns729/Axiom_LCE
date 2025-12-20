@@ -2,16 +2,18 @@
 Axiom LCE FastAPI Backend
 European AI-powered legal document analysis with data sovereignty
 """
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from dotenv import load_dotenv
 import os
 import time
 import json
+import uuid
 import statistics
 from io import BytesIO
 from datetime import datetime
@@ -48,10 +50,9 @@ app = FastAPI(
 )
 
 # CORS Configuration
-allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -100,6 +101,76 @@ async def health_check(db: Session = Depends(get_db)):
             status_code=503,
             detail=f"Service unhealthy: {str(e)}"
         )
+
+# ============================================================================
+# HEADLESS / WORD ADD-IN ENDPOINTS
+# ============================================================================
+
+class HeadlessLogicWarning(BaseModel):
+    id: str
+    node_id: str
+    text_snippet: str
+    issue: str
+    severity: str 
+    remediation: Optional[str] = None
+
+class HeadlessAnalysisResponse(BaseModel):
+    contract_id: str
+    warnings: List[HeadlessLogicWarning]
+
+@app.post("/analyze_logic")
+async def analyze_logic_headless(
+    file: UploadFile = File(...),
+    playbook: Optional[str] = Form(None)
+):
+    """
+    Headless analysis endpoint for Word Add-in.
+    Accepts config/playbook via 'playbook' form field.
+    """
+    try:
+        # Mock Logic for Demo
+        # In real implementation, we would use document_service.extract_text and analysis_service
+        
+        content = await file.read()
+        text, tree = document_service.extract_text(file.filename, content)
+        
+        # Parse playbook
+        user_prefs = {}
+        if playbook:
+            try:
+                user_prefs = json.loads(playbook)
+            except:
+                pass 
+                
+        target_law = user_prefs.get('governing_law', 'Delaware')
+        
+        warnings = []
+        
+        # Simple string search over text (faster than tree for simple keywords)
+        # Mock finding a clause
+        if "governing law" in text.lower():
+            # Find the specific segment/sentence?
+            # For this mock, just flag it if target_law isn't near "governing law"
+            import re
+            # Find sentence containing "governing law"
+            sentences = re.split(r'[.!?]', text)
+            for s in sentences:
+                if "governing law" in s.lower():
+                     if target_law.lower() not in s.lower():
+                         warnings.append(HeadlessLogicWarning(
+                            id=str(uuid.uuid4()),
+                            node_id="mock-id", 
+                            text_snippet=s.strip()[:100] + "...",
+                            issue=f"Governing Law mismatch. Expected {target_law}.",
+                            severity="High",
+                            remediation=f"Change jurisdiction to {target_law}."
+                         ))
+                         break
+        
+        return HeadlessAnalysisResponse(contract_id=str(uuid.uuid4()), warnings=warnings)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # DOCUMENT ENDPOINTS

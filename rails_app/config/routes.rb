@@ -10,4 +10,7 @@ Rails.application.routes.draw do
   get '/contract/:id/tree', to: 'documents#show'
   post '/contract/:id/query', to: 'documents#query'
   post '/contract/:id/refactor', to: 'documents#refactor'
+  
+  # Headless API
+  post '/analyze_logic', to: 'documents#analyze_logic'
 end

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import shutil
@@ -118,6 +118,81 @@ async def refactor_contract(contract_id: str, request: RefactorRequest):
         
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class Playbook(BaseModel):
+    preferences: dict
+
+class LogicWarning(BaseModel):
+    id: str
+    node_id: str
+    text_snippet: str
+    issue: str
+    severity: str # "High", "Medium", "Low"
+    remediation: Optional[str] = None
+
+class AnalysisResponse(BaseModel):
+    contract_id: str
+    warnings: List[LogicWarning]
+
+@app.post("/analyze_logic")
+async def analyze_logic(file: UploadFile = File(...), playbook: Optional[str] = Form(None)):
+    # playbook is passed as a JSON string because it's a form-data request alongside the file
+    contract_id = str(uuid.uuid4())
+    file_location = os.path.join(UPLOAD_DIR, f"{contract_id}_{file.filename}")
+    
+    with open(file_location, "wb+") as file_object:
+        shutil.copyfileobj(file.file, file_object)
+        
+    try:
+        # 1. Ingest
+        tree = parser.load(file_location)
+        contract_store[contract_id] = tree
+        rag.index_tree(tree)
+
+        # 2. Parse Playbook
+        import json
+        user_prefs = {}
+        if playbook:
+            try:
+                user_prefs = json.loads(playbook)
+            except:
+                pass 
+
+        # 3. Running "The Logic Linter" (Mock implementation for pivot)
+        warnings = []
+        
+        # Example Check: Governing Law
+        # In a real app, we would query the RAG engine: "What is the governing law?"
+        # Then compare with user_prefs.get('governing_law')
+        
+        target_law = user_prefs.get('governing_law', 'Delaware') # Default to DE
+        
+        # Mocking the RAG lookup for demonstration
+        # Iterate nodes to find "Governing Law"
+        found_law_node = None
+        for child in tree.children:
+            # simple keyword search on first level for speed
+            if "governing law" in child.text.lower() or "jurisdiction" in child.text.lower():
+                found_law_node = child
+                break
+        
+        if found_law_node:
+            # Check if it matches target (Naive check)
+            if target_law.lower() not in found_law_node.text.lower():
+                warnings.append(LogicWarning(
+                    id=str(uuid.uuid4()),
+                    node_id=found_law_node.original_xml_id,
+                    text_snippet=found_law_node.text[:50]+"...",
+                    issue=f"Governing Law mismatch. Expected {target_law}.",
+                    severity="High",
+                    remediation=f"Change jurisdiction to {target_law}."
+                ))
+        
+        return AnalysisResponse(contract_id=contract_id, warnings=warnings)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
