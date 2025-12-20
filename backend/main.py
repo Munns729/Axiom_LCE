@@ -42,8 +42,12 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (optional - only if DATABASE_URL is configured)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Database not available - {e}")
+    print("Running in database-free mode. Some features may be limited.")
 
 # Initialize FastAPI
 app = FastAPI(
