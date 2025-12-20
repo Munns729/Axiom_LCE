@@ -1,6 +1,6 @@
 # Axiom - The "IDE for Transactions"
 
-**Axiom** is an Assurance & Origination Platform designed for Transactional Leaders. It acts as a "SaaS Linter" for legal contracts, decoupling Business Intent (Outcomes) from Legal Syntax (Text).
+**Axiom** is an Assurance & Origination Platform designed for Transactional Leaders. It functions as a true **Integrated Development Environment (IDE) for legal contracts**, decoupling Business Intent (Outcomes) from Legal Syntax (Text).
 
 > **Core Philosophy**: "Test-Driven Development (TDD) for Legal Contracts."
 
