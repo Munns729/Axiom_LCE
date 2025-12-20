@@ -1,8 +1,23 @@
 import React, { useState } from 'react';
 import { ClauseSuggestionModal } from './ClauseSuggestionModal';
-import { CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { CustomScenarioInput } from './CustomScenarioInput';
+import { CheckCircle2, AlertTriangle, ChevronDown, Sparkles } from 'lucide-react';
 
-const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, analysisId }) => {
+const SourceBadge = ({ sourceType }) => {
+    const badges = {
+        template: { label: 'Standard', color: 'bg-blue-100 text-blue-700' },
+        contract_generated: { label: 'AI Generated', color: 'bg-purple-100 text-purple-700' },
+        user_custom: { label: 'Custom', color: 'bg-emerald-100 text-emerald-700' }
+    };
+    const badge = badges[sourceType] || badges.template;
+    return (
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${badge.color}`}>
+            {badge.label}
+        </span>
+    );
+};
+
+const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, analysisId, onScenarioAdded }) => {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [selectedScenario, setSelectedScenario] = useState(null);
 
@@ -10,6 +25,7 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
         setSelectedScenario(scenario);
         setShowSuggestions(true);
     };
+
     const passCount = scenarios.filter(s => s.status === 'pass').length;
     const totalCount = scenarios.length;
 
@@ -31,15 +47,13 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
 
                     return (
                         <div key={scenario.id}>
-                            {/* Scenario row */}
                             <div
                                 className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-200 border border-transparent
-                  ${isFail ? 'cursor-pointer hover:bg-amber-50/50' : 'cursor-default'}
-                  ${isExpanded ? 'bg-amber-50/50 border-amber-100' : ''}
-                `}
+                                    ${isFail ? 'cursor-pointer hover:bg-amber-50/50' : 'cursor-default'}
+                                    ${isExpanded ? 'bg-amber-50/50 border-amber-100' : ''}
+                                `}
                                 onClick={() => isFail && onScenarioClick(isExpanded ? null : scenario.id)}
                             >
-                                {/* Status Icon */}
                                 <div className="shrink-0">
                                     {isFail ? (
                                         <AlertTriangle className="w-5 h-5 text-amber-600" />
@@ -48,17 +62,18 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
                                     )}
                                 </div>
 
-                                {/* Name & Desc */}
                                 <div className="flex-1 min-w-0">
-                                    <div className={`text-sm font-medium ${isFail ? 'text-slate-800' : 'text-slate-600'}`}>
-                                        {scenario.name}
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                        <div className={`text-sm font-medium ${isFail ? 'text-slate-800' : 'text-slate-600'}`}>
+                                            {scenario.name}
+                                        </div>
+                                        <SourceBadge sourceType={scenario.source_type} />
                                     </div>
                                     <div className="text-xs text-slate-400 truncate">
                                         {scenario.description}
                                     </div>
                                 </div>
 
-                                {/* Chevron for failed items */}
                                 {isFail && (
                                     <div className={`text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
                                         <ChevronDown className="w-4 h-4" />
@@ -66,17 +81,14 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
                                 )}
                             </div>
 
-                            {/* Expanded Details */}
                             {isExpanded && isFail && (
                                 <div className="mt-2 mx-3 p-4 bg-white/50 rounded-xl border border-amber-200 animate-in slide-in-from-top-2 duration-300">
                                     <div className="space-y-3">
-                                        {/* Trigger */}
                                         <div>
                                             <div className="text-[10px] uppercase font-bold text-slate-500 mb-1 tracking-wider">Trigger Event</div>
-                                            <div className="text-sm text-slate-700">{scenario.triggerEvent}</div>
+                                            <div className="text-sm text-slate-700">{scenario.trigger_event || scenario.triggerEvent}</div>
                                         </div>
 
-                                        {/* Conflict */}
                                         <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
                                             <div className="text-[10px] uppercase font-bold text-amber-700 mb-1 tracking-wider flex items-center gap-1">
                                                 <AlertTriangle className="w-3 h-3" /> Issue Detected
@@ -84,11 +96,10 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
                                             <div className="text-sm text-amber-900 leading-relaxed rounded">{scenario.conflict}</div>
                                         </div>
 
-                                        {/* Outcome Comparison */}
                                         <div className="grid grid-cols-2 gap-4 pt-1">
                                             <div>
                                                 <div className="text-[10px] uppercase font-bold text-slate-500 mb-1 tracking-wider">Expected</div>
-                                                <div className="text-sm text-slate-600 leading-relaxed">{scenario.expectedOutcome}</div>
+                                                <div className="text-sm text-slate-600 leading-relaxed">{scenario.expected_outcome || scenario.expectedOutcome}</div>
                                             </div>
                                             <div>
                                                 <div className="text-[10px] uppercase font-bold text-amber-700 mb-1 tracking-wider">Actual Result</div>
@@ -97,7 +108,7 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
                                                 </div>
                                             </div>
                                         </div>
-                                        {/* Suggest Fix button for failed scenarios */}
+
                                         <div className="mt-4 pt-4 border-t border-amber-200">
                                             <button
                                                 onClick={(e) => {
@@ -122,17 +133,22 @@ const ScenarioTestPanel = ({ scenarios, onScenarioClick, expandedScenarioId, ana
                 })}
             </div>
 
+            {/* Custom Scenario Input */}
+            <CustomScenarioInput
+                analysisId={analysisId}
+                onScenarioAdded={onScenarioAdded}
+            />
+
             {/* Summary footer */}
             <div className="mt-4 pt-4 border-t border-slate-100 text-center">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${passCount === totalCount ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                    }`}>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${passCount === totalCount ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {passCount === totalCount
                         ? '✅ All scenarios passed'
                         : `⚠️ ${totalCount - passCount} ${totalCount - passCount === 1 ? 'failure' : 'failures'} detected`
                     }
                 </span>
             </div>
-            {/* Clause Suggestion Modal */}
+
             <ClauseSuggestionModal
                 isOpen={showSuggestions}
                 onClose={() => setShowSuggestions(false)}

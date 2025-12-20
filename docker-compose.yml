@@ -19,6 +19,25 @@ services:
       timeout: 5s
       retries: 5
 
+  rails:
+    build: ./rails_app
+    container_name: axiom-rails
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://axiom:axiom_dev_password@postgres:5432/axiom_lce
+      SPINE_URL: http://backend:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - ./rails_app:/rails
+    tty: true
+    stdin_open: true
+    command: ruby bin/rails server -b 0.0.0.0
+
   backend:
     build: ./backend
     container_name: axiom-backend
@@ -27,7 +46,7 @@ services:
     environment:
       DATABASE_URL: postgresql://axiom:axiom_dev_password@postgres:5432/axiom_lce
       MISTRAL_API_KEY: ${MISTRAL_API_KEY}
-      CORS_ORIGINS: http://localhost:5173
+      CORS_ORIGINS: "*"
     depends_on:
       postgres:
         condition: service_healthy

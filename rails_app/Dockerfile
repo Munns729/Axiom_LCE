@@ -9,6 +9,7 @@ RUN apt-get update -qq && \
 
 # Gems
 COPY Gemfile* .
+RUN bundle install
 
 # Entrypoint to handle migration/server
 COPY ./bin/docker-entrypoint /rails/bin/

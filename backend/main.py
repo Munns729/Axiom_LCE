@@ -2,10 +2,10 @@
 Axiom LCE FastAPI Backend
 European AI-powered legal document analysis with data sovereignty
 """
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Body
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -19,13 +19,16 @@ from io import BytesIO
 from datetime import datetime
 
 from database import get_db, engine
+
 from models import (
     Base, Document, Analysis, ClauseSuggestion, 
-    DealTemplate, DealMetrics, BenchmarkInsight, MarketBenchmark
+    DealTemplate, DealMetrics, BenchmarkInsight, MarketBenchmark,
+    ScenarioTemplate
 )
 from services.document_service import DocumentService
 from services.analysis_service import AnalysisService
 from services.benchmark_service import BenchmarkService
+from services.scenario_service import ScenarioService
 from services.structure_service import DocumentStructureService
 from schemas import (
     DocumentUploadResponse,
@@ -62,6 +65,7 @@ app.add_middleware(
 document_service = DocumentService()
 analysis_service = AnalysisService()
 benchmark_service = BenchmarkService()
+scenario_service = ScenarioService()
 
 # ============================================================================
 # ROOT & HEALTH ENDPOINTS
@@ -297,16 +301,16 @@ async def analyze_document(
         if not doc:
             raise HTTPException(404, "Document not found. Please upload first.")
         
-        # Run analysis
+        # Run basic analysis (definitions, conflicts, timeline)
         start_time = time.time()
         result = await analysis_service.analyze_document(doc.original_text)
         duration_ms = int((time.time() - start_time) * 1000)
         
-        # Save analysis to database
+        # Save analysis to database (initial save)
         analysis = Analysis(
             document_id=doc.id,
             timeline=result["timeline"],
-            scenarios=result["scenarios"],
+            scenarios=[], # Will be populated by scenario service
             definitions=result.get("definitions", []),
             conflict_analysis=result.get("conflict_analysis", {}),
             analysis_duration_ms=f"{duration_ms}ms"
@@ -314,6 +318,32 @@ async def analyze_document(
         db.add(analysis)
         db.commit()
         db.refresh(analysis)
+        
+        # Generate and test scenarios (3-Tier System)
+        scenario_tests = await scenario_service.generate_all_scenarios(
+            analysis_id=str(analysis.id),
+            document_text=doc.original_text,
+            transaction_type="founder_agreement", # Default to founder agreement for now
+            db=db
+        )
+        
+        # Format scenarios for frontend/JSON column
+        formatted_scenarios = [{
+            "id": str(st.id),
+            "name": st.name,
+            "status": st.status,
+            "description": st.description,
+            "trigger_event": st.trigger_event if st.status == "fail" else None,
+            "conflict": st.reasoning.get("conflict_if_any") if st.status == "fail" else None,
+            "outcome": st.reasoning.get("actual_outcome") if st.status == "fail" else None,
+            "expected_outcome": st.reasoning.get("expected_behavior") if st.status == "fail" else None,
+            "source_type": st.source_type,
+            "severity": st.severity
+        } for st in scenario_tests]
+        
+        # Update analysis with formatted scenarios
+        analysis.scenarios = formatted_scenarios
+        db.commit()
         
         return AnalysisResponse(
             document_id=document_id,
@@ -456,8 +486,66 @@ async def get_analyses(
         )
 
 # ============================================================================
-# CLAUSE SUGGESTION ENDPOINTS
+# SCENARIO ENDPOINTS
 # ============================================================================
+
+@app.post("/api/test-custom-scenario/{analysis_id}")
+async def test_custom_scenario(
+    analysis_id: str,
+    scenario_text: str = Body(..., embed=True), # Expect JSON: { "scenario_text": "..." }
+    db: Session = Depends(get_db)
+):
+    """
+    User submits a custom scenario in natural language
+    """
+    try:
+        result = await scenario_service.test_custom_scenario(
+            analysis_id=analysis_id,
+            natural_language_scenario=scenario_text,
+            db=db
+        )
+        
+        return {
+            "scenario_id": str(result.id),
+            "name": result.name,
+            "status": result.status,
+            "reasoning": result.reasoning,
+            "severity": result.severity,
+            "source_type": result.source_type
+        }
+    
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Custom scenario test failed: {str(e)}")
+
+@app.get("/api/scenario-templates/{transaction_type}")
+async def get_scenario_templates(
+    transaction_type: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get available scenario templates for a transaction type
+    """
+    try:
+        templates = db.query(ScenarioTemplate).filter(
+            ScenarioTemplate.transaction_type == transaction_type,
+            ScenarioTemplate.is_active == True
+        ).order_by(
+            ScenarioTemplate.priority.desc()
+        ).all()
+        
+        return [{
+            "id": str(t.id),
+            "name": t.name,
+            "description": t.description,
+            "category": t.category,
+            "priority": t.priority
+        } for t in templates]
+    
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get templates: {str(e)}")
+
 
 @app.post("/api/suggest-fixes/{analysis_id}")
 async def suggest_clause_fixes(

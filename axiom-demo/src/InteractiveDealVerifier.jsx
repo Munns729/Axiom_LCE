@@ -44,6 +44,11 @@ const InteractiveDealVerifier = () => {
     const [progress, setProgress] = useState(0);
     const [progressStatus, setProgressStatus] = useState("Initializing...");
 
+    const handleScenarioAdded = (newScenario) => {
+        setScenarioTestsState(prev => [...prev, newScenario]);
+        toast.success('Custom scenario added!');
+    };
+
     // Real Analysis Logic
     const startVerification = async () => {
         setIsRunning(true);
@@ -290,8 +295,8 @@ const InteractiveDealVerifier = () => {
                     <button
                         onClick={() => setActiveTab('validation')}
                         className={`pb-3 text-sm font-medium border-b-2 transition-all ${activeTab === 'validation'
-                                ? 'text-indigo-600 border-indigo-600'
-                                : 'text-slate-500 border-transparent hover:text-slate-700'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-slate-500 border-transparent hover:text-slate-700'
                             }`}
                     >
                         Timeline & Checks
@@ -299,8 +304,8 @@ const InteractiveDealVerifier = () => {
                     <button
                         onClick={() => setActiveTab('scenarios')}
                         className={`pb-3 text-sm font-medium border-b-2 transition-all ${activeTab === 'scenarios'
-                                ? 'text-indigo-600 border-indigo-600'
-                                : 'text-slate-500 border-transparent hover:text-slate-700'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-slate-500 border-transparent hover:text-slate-700'
                             }`}
                     >
                         Scenario Tests
@@ -378,6 +383,7 @@ const InteractiveDealVerifier = () => {
                                     onScenarioClick={setExpandedScenario}
                                     expandedScenarioId={expandedScenario}
                                     analysisId={analyzedDoc?.analysisId}
+                                    onScenarioAdded={handleScenarioAdded}
                                 />
                             </div>
                         )}

@@ -216,3 +216,74 @@ class MarketBenchmark(Base):
     
     def __repr__(self):
         return f"<MarketBenchmark(metric={self.metric_name}, source={self.source})>"
+
+class ScenarioTemplate(Base):
+    """Pre-defined scenario templates by transaction type"""
+    __tablename__ = "scenario_templates"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Classification
+    transaction_type = Column(String(100), nullable=False)  # "founder_agreement", "m&a", "employment"
+    category = Column(String(100))  # "termination", "change_of_control", "vesting"
+    priority = Column(Integer, default=5)  # 1-10, higher = more important
+    
+    # Scenario definition
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    
+    # What to test
+    trigger_event = Column(Text, nullable=False)
+    expected_behavior = Column(Text, nullable=False)
+    
+    # Common failure patterns
+    common_conflicts = Column(JSON)
+    
+    # How to test
+    test_strategy = Column(JSON)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    def __repr__(self):
+        return f"<ScenarioTemplate(type={self.transaction_type}, name={self.name})>"
+
+class ScenarioTest(Base):
+    """Actual scenario test results for a specific analysis"""
+    __tablename__ = "scenario_tests"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    analysis_id = Column(UUID(as_uuid=True), ForeignKey('analyses.id'), nullable=False)
+    
+    # Source of scenario
+    source_type = Column(String(50), nullable=False)  # "template", "contract_generated", "user_custom"
+    template_id = Column(UUID(as_uuid=True), ForeignKey('scenario_templates.id'))  # If from template
+    
+    # Scenario details
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    trigger_event = Column(Text, nullable=False)
+    
+    # Test results
+    status = Column(String(20), nullable=False)  # "pass", "fail", "warning"
+    
+    # Pass/Fail reasoning (from LLM)
+    reasoning = Column(JSON)
+    
+    # Additional context
+    severity = Column(String(20))  # "critical", "high", "medium", "low"
+    affected_clauses = Column(JSON)  # ["Section 4.2", "Section 1.4"]
+    
+    # User interaction
+    user_acknowledged = Column(Boolean, default=False)
+    user_notes = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    analysis = relationship("Analysis", backref="scenario_tests")
+    template = relationship("ScenarioTemplate")
+    
+    def __repr__(self):
+        return f"<ScenarioTest(name={self.name}, status={self.status})>"
