@@ -1,0 +1,48 @@
+CONSULTING AGREEMENT
+
+This Consulting Agreement ("Agreement") is entered into as of January 15, 2026 ("Effective Date"), by and between TechCorp Inc., a Delaware corporation ("Company"), and John Smith ("Consultant").
+
+1. SERVICES
+
+The Consultant shall provide software development consulting services as described in Exhibit A attached hereto.
+
+2. COMPENSATION
+
+2.1 Fees. Company shall pay Consultant a fee of $15,000 per month for services rendered.
+
+2.2 Payment Terms. Payment shall be made within 45 days of receipt of Consultant's invoice.
+
+3. TERM AND TERMINATION
+
+3.1 Term. This Agreement shall commence on the Effective Date and continue for a period of twelve (12) months unless earlier terminated as provided herein.
+
+3.2 Termination for Convenience. Either party may terminate this Agreement upon thirty (30) days' prior written notice to the other party.
+
+4. INTELLECTUAL PROPERTY
+
+All work product, inventions, and intellectual property created by Consultant in the course of performing services under this Agreement shall be the sole and exclusive property of Company.
+
+5. CONFIDENTIALITY
+
+Consultant agrees to maintain the confidentiality of all Company proprietary information and trade secrets disclosed during the term of this Agreement and for a period of three (3) years thereafter.
+
+6. NON-COMPETE
+
+During the term of this Agreement and for a period of eighteen (18) months following termination, Consultant shall not engage in any business that competes with Company's business within a 100-mile radius of Company's principal place of business.
+
+7. GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with the laws of the State of California, without regard to its conflict of law provisions.
+
+8. ENTIRE AGREEMENT
+
+This Agreement constitutes the entire agreement between the parties and supersedes all prior negotiations, representations, or agreements, whether written or oral.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.
+
+TECHCORP INC.                    CONSULTANT
+
+By: _________________            _________________
+Name: Sarah Johnson              John Smith
+Title: CEO                       Date: ___________
+Date: ___________

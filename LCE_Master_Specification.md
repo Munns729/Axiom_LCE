@@ -107,9 +107,9 @@ Capability A (Q&A):
 
 Input: "Does this contract have a Non-Compete?"
 
-Process: RAG Query against ClauseNode embeddings.
+Process: LLM analyzes full AST context with structured metadata.
 
-Output: "Yes, Section 8.1 contains a 12-month non-compete." (Clicking link scrolls Right Panel to Section 8.1).
+Output: "Yes, Section 8.1 contains a 12-month non-compete." (Clicking link scrolls Right Panel to Section 8.1, using AST node ID for precise navigation).
 
 Capability B (Ad-Hoc Drafting):
 
@@ -143,7 +143,7 @@ App Server: Ruby on Rails 8 (API Mode).
 
 Document Microservice: Python (FastAPI) + python-docx (XML Manipulation) + Custom AST Parser.
 
-Database: PostgreSQL + pgvector.
+Database: PostgreSQL.
 
 Queues: Redis + Sidekiq (Background jobs).
 
@@ -155,7 +155,7 @@ Deployment: Dockerfile and docker-compose.yml included from Day 1.
 
 Contract (id, content_json, original_file_data).
 
-ClauseNode (id, contract_id, parent_id, sibling_order, original_xml_id, text_content, embedding).
+ClauseNode (id, contract_id, parent_id, sibling_order, original_xml_id, text_content).
 
 an_type: String (e.g., 'article', 'section', 'point' - aligned with Akoma Ntoso).
 
@@ -197,9 +197,11 @@ Objectives:
     -   **Vocabulary**: Use Akoma Ntoso terms for nodes (`article`, `section`, `paragraph`, `point`), but do NOT validate against XSD. Keep it JSON-friendly.
     -   **Identity**: Map each node to its `original_xml_id` from the docx (ensure we can trace back to the exact paragraph in the XML).
 
-2.  **Vectorization (Local RAG)**
-    -   Store these nodes in a local vector store (ChromaDB or similar lightweight local alternative).
-    -   Embed the text content of each node.
+2.  **Context Serialization (Long-Context Strategy)**
+    -   Serialize the entire AST to structured JSON with metadata (node IDs, types, hierarchy).
+    -   Pass full document context to LLM for semantic analysis (modern context windows handle 50k-200k tokens easily).
+    -   Use AST node IDs for precise citation and highlighting in responses.
+    -   **Rationale**: Simpler architecture, better cross-reference understanding, preserves semantic coherence, easier air-gap deployment.
 
 3.  **Structural Edit Tests (The Hard Part)**
     -   **Test A (Injection)**: Programmatically insert a new paragraph Node between "Clause 4.1" and "Clause 4.2" in the AST.

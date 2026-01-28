@@ -31,44 +31,25 @@ export function ClauseSuggestionModal({
         }
     };
 
-    // Export document with selected fix
-    const handleExport = async () => {
+    // Apply selected fix
+    const handleApply = async () => {
         if (!selectedType || !suggestions) return;
 
         setExporting(true);
         try {
-            // Record selection - fix: use query param instead of body
+            // Record selection
             await fetch(`http://localhost:8000/api/select-suggestion/${suggestions.suggestion_id}?selected_type=${selectedType}`, {
                 method: 'POST'
             });
 
-            // Download revised document
-            const response = await fetch(
-                `http://localhost:8000/api/export-with-fix/${suggestions.suggestion_id}?selected_type=${selectedType}`,
-                { method: 'POST' }
-            );
-
-            if (!response.ok) throw new Error('Export failed');
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Revised_Agreement_${suggestions.original_section}.docx`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            toast.success('Document exported successfully');
+            toast.success('Fix applied! Use the main Export button to download the revised document.');
 
             // Call onSuccess prop if available (we will add this prop later)
             if (onClose) onClose();
 
         } catch (error) {
-            console.error('Export failed:', error);
-            toast.error('Export failed');
-            // Ideally call onError prop here
+            console.error('Failed to apply fix:', error);
+            toast.error('Failed to apply fix');
         } finally {
             setExporting(false);
         }
@@ -179,7 +160,7 @@ export function ClauseSuggestionModal({
                                 Cancel
                             </button>
                             <button
-                                onClick={handleExport}
+                                onClick={handleApply}
                                 disabled={!selectedType || exporting}
                                 className={`
                   px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all
@@ -189,8 +170,8 @@ export function ClauseSuggestionModal({
                                     }
                 `}
                             >
-                                <Download className="w-4 h-4" />
-                                {exporting ? 'Exporting...' : 'Export Revised Document'}
+                                <Sparkles className="w-4 h-4" />
+                                {exporting ? 'Applying...' : 'Apply Fix to Document'}
                             </button>
                         </div>
                     </div>

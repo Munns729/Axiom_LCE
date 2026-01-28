@@ -7,19 +7,24 @@ Office.onReady((info) => {
 async function run() {
     const statusDiv = document.getElementById("status");
     const resultsDiv = document.getElementById("results");
+    const statsDiv = document.getElementById("stats");
 
+    statusDiv.className = "loading";
     statusDiv.innerText = "Reading document...";
     resultsDiv.innerHTML = "";
+    statsDiv.style.display = "none";
 
     // 1. Get entire document
     Office.context.document.getFileAsync(Office.FileType.Compressed, { sliceSize: 65536 }, function (result) {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
             const myFile = result.value;
-            statusDiv.innerText = `Document read. Slices: ${myFile.sliceCount}. Downloading...`;
+            statusDiv.className = "loading";
+            statusDiv.innerText = `Document read. ${myFile.sliceCount} slices. Processing...`;
 
             // 2. Read all slices
             getFileContent(myFile).then((docBlob) => {
-                statusDiv.innerText = "Sending to Axiom Cloud...";
+                statusDiv.className = "loading";
+                statusDiv.innerText = "Sending to Axiom API...";
 
                 // 3. Send to API
                 const playbook = document.getElementById("playbook").value;
@@ -34,12 +39,14 @@ async function run() {
                 })
                     .then(response => response.json())
                     .then(data => {
-                        statusDiv.innerText = "Analysis Complete.";
+                        statusDiv.className = "success";
+                        statusDiv.innerText = `Analysis complete! Contract ID: ${data.contract_id}`;
                         renderWarnings(data.warnings);
                         myFile.closeAsync();
                     })
                     .catch(err => {
-                        statusDiv.innerText = "Error: " + err.message;
+                        statusDiv.className = "error";
+                        statusDiv.innerText = "Error: " + err.message + ". Make sure Docker services are running.";
                         console.error(err);
                         myFile.closeAsync();
                     });
@@ -49,6 +56,7 @@ async function run() {
                 myFile.closeAsync();
             });
         } else {
+            statusDiv.className = "error";
             statusDiv.innerText = "Error: " + result.error.message;
         }
     });
@@ -99,19 +107,45 @@ function getFileContent(myFile) {
 
 function renderWarnings(warnings) {
     const resultsDiv = document.getElementById("results");
+    const statsDiv = document.getElementById("stats");
+
     if (!warnings || warnings.length === 0) {
-        resultsDiv.innerHTML = "<div style='color:green;'>No Logic Conflicts Detected.</div>";
+        resultsDiv.innerHTML = "<div class='no-warnings'>No conflicts detected - document matches playbook!</div>";
+        statsDiv.style.display = "none";
         return;
     }
 
+    // Calculate statistics
+    const highCount = warnings.filter(w => w.severity === "High").length;
+    document.getElementById("warningCount").textContent = warnings.length;
+    document.getElementById("highSeverity").textContent = highCount;
+    statsDiv.style.display = "block";
+
+    // Render warnings
+    resultsDiv.innerHTML = "";
     warnings.forEach(w => {
+        const severityClass = w.severity === "High" ? "warning-high" :
+            w.severity === "Medium" ? "warning-medium" : "warning-low";
+        const severityBadgeClass = w.severity.toLowerCase();
+
         const div = document.createElement("div");
-        div.className = "warning";
+        div.className = `warning ${severityClass}`;
         div.innerHTML = `
-            <div class="warning-title">${w.issue}</div>
-            <div>${w.text_snippet}</div>
-            <div style="font-size:0.9em; margin-top:4px;">Suggestion: ${w.remediation}</div>
+            <div class="warning-header">
+                <div class="warning-title">${w.issue}</div>
+                <span class="warning-severity ${severityBadgeClass}">${w.severity}</span>
+            </div>
+            <div class="warning-snippet">${w.text_snippet}</div>
+            ${w.remediation ? `<div class="warning-remediation">${w.remediation}</div>` : ''}
         `;
         resultsDiv.appendChild(div);
     });
+}
+
+function loadExamplePlaybook() {
+    document.getElementById("playbook").value = `{
+  "governing_law": "New York",
+  "payment_terms": "30 days",
+  "liability_cap": "$1,000,000"
+}`;
 }

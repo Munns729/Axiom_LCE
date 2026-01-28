@@ -4,6 +4,7 @@ from models import ScenarioTemplate, ScenarioTest, Analysis, Document
 from .mistral_service import MistralService
 import json
 import uuid
+import asyncio
 
 class ScenarioService:
     def __init__(self):
@@ -117,7 +118,8 @@ Return ONLY the JSON array, max {max_count} items."""
                 "test_strategy": t.test_strategy
             } for t in templates[:max_count]]
 
-        response = await self.mistral.client.chat.complete(
+        response = await asyncio.to_thread(
+            self.mistral.client.chat.complete,
             model=self.mistral.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
@@ -185,7 +187,8 @@ Return JSON array (max {max_count} scenarios):
 Only generate scenarios for provisions that actually exist in this document.
 Return ONLY valid JSON array."""
         
-        response = await self.mistral.client.chat.complete(
+        response = await asyncio.to_thread(
+            self.mistral.client.chat.complete,
             model=self.mistral.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4
@@ -268,7 +271,8 @@ Return JSON:
 
 Return ONLY valid JSON."""
         
-        response = await self.mistral.client.chat.complete(
+        response = await asyncio.to_thread(
+            self.mistral.client.chat.complete,
             model=self.mistral.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
@@ -344,7 +348,8 @@ User: "What if I get cancer and can't work for 6 months?"
 
 Return ONLY valid JSON."""
         
-        response = await self.mistral.client.chat.complete(
+        response = await asyncio.to_thread(
+            self.mistral.client.chat.complete,
             model=self.mistral.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
