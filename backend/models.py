@@ -287,3 +287,39 @@ class ScenarioTest(Base):
     
     def __repr__(self):
         return f"<ScenarioTest(name={self.name}, status={self.status})>"
+
+class AssertionVerification(Base):
+    """User-submitted assertions and their verification results"""
+    __tablename__ = "assertion_verifications"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(UUID(as_uuid=True), ForeignKey('documents.id'), nullable=False)
+    analysis_id = Column(UUID(as_uuid=True), ForeignKey('analyses.id'))  # Optional link to analysis
+    
+    # User's assertion
+    assertion_text = Column(Text, nullable=False)
+    
+    # Parsed assertion structure
+    parsed_assertion = Column(JSON)  # Entities, conditions, expected outcome
+    
+    # Verification result
+    verdict = Column(String(20), nullable=False)  # "pass", "fail", "ambiguous"
+    logic_trace = Column(JSON, nullable=False)  # Causality chain
+    
+    # Conflicts found
+    has_conflict = Column(Boolean, default=False)
+    conflict_severity = Column(String(20))  # "high", "medium", "low"
+    conflict_details = Column(Text)
+    conflicting_clauses = Column(JSON)  # List of clause IDs/sections
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    verification_duration_ms = Column(Integer)
+    model_used = Column(String(50), default="mistral-small-latest")
+    
+    # Relationships
+    document = relationship("Document", backref="assertion_verifications")
+    analysis = relationship("Analysis", backref="assertion_verifications")
+    
+    def __repr__(self):
+        return f"<AssertionVerification(id={self.id}, verdict={self.verdict})>"

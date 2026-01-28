@@ -23,13 +23,14 @@ from database import get_db, engine
 from models import (
     Base, Document, Analysis, ClauseSuggestion, 
     DealTemplate, DealMetrics, BenchmarkInsight, MarketBenchmark,
-    ScenarioTemplate
+    ScenarioTemplate, AssertionVerification
 )
 from services.document_service import DocumentService
 from services.analysis_service import AnalysisService
 from services.benchmark_service import BenchmarkService
 from services.scenario_service import ScenarioService
 from services.structure_service import DocumentStructureService
+from services.verification_service import VerificationService
 from schemas import (
     DocumentUploadResponse,
     AnalysisResponse,
@@ -70,6 +71,7 @@ document_service = DocumentService()
 analysis_service = AnalysisService()
 benchmark_service = BenchmarkService()
 scenario_service = ScenarioService()
+verification_service = VerificationService()
 
 # ============================================================================
 # ROOT & HEALTH ENDPOINTS
@@ -285,6 +287,122 @@ async def list_documents(
             detail=f"Failed to list documents: {str(e)}"
         )
 
+@app.get("/api/documents/{document_id}")
+async def get_document(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get document details by ID
+    """
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+        
+        return {
+            "id": str(doc.id),
+            "filename": doc.filename,
+            "file_type": doc.file_type,
+            "file_size": doc.file_size,
+            "uploaded_at": doc.uploaded_at.isoformat(),
+            "text_length": len(doc.original_text) if doc.original_text else 0,
+            "has_file_content": doc.file_content is not None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get document: {str(e)}")
+
+@app.get("/api/documents/{document_id}/export")
+async def export_document(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Download the document. 
+    If clause suggestions have been selected, they are applied to the document.
+    """
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+        
+        if not doc.file_content:
+            raise HTTPException(400, "Original file content not available")
+        
+        # Check for accepted suggestions to apply
+        # Find latest analysis
+        latest_analysis = db.query(Analysis).filter(
+            Analysis.document_id == document_id
+        ).order_by(Analysis.created_at.desc()).first()
+
+        final_content = doc.file_content
+
+        # Apply fixes if any exist
+        if latest_analysis:
+            selected_suggestions = db.query(ClauseSuggestion).filter(
+                ClauseSuggestion.analysis_id == latest_analysis.id,
+                ClauseSuggestion.selected_option.isnot(None)
+            ).all()
+
+            if selected_suggestions:
+                try:
+                    from services.docx_editor import SafeDocxEditor
+                    editor = SafeDocxEditor(doc.file_content)
+                    applied_count = 0
+
+                    for suggestion in selected_suggestions:
+                        # Find the chosen fix text
+                        # suggestion.suggestions is a list of dicts: [{type, clause_text, ...}, ...]
+                        chosen_fix = next(
+                            (s for s in suggestion.suggestions if s['type'] == suggestion.selected_option), 
+                            None
+                        )
+                        
+                        if chosen_fix:
+                            result = editor.replace_clause(
+                                suggestion.original_clause_text, 
+                                chosen_fix['clause_text']
+                            )
+                            if result["success"]:
+                                applied_count += 1
+                    
+                    if applied_count > 0:
+                        final_content = editor.save_to_bytes()
+                        print(f"Applied {applied_count} fixes to exported document")
+                
+                except Exception as e:
+                    print(f"Error applying fixes during export: {e}")
+                    # Fallback to original content on error, but log it
+        
+        # Determine content type based on file extension
+        content_types = {
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "pdf": "application/pdf",
+            "txt": "text/plain"
+        }
+        content_type = content_types.get(doc.file_type, "application/octet-stream")
+        
+        file_stream = BytesIO(final_content)
+        
+        # Add "revised" to filename if changed
+        filename = doc.filename
+        if latest_analysis and filename.endswith(".docx"):
+             filename = filename.replace(".docx", "_revised.docx")
+
+        return StreamingResponse(
+            file_stream,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Export failed: {str(e)}")
+
 # ============================================================================
 # ANALYSIS ENDPOINTS
 # ============================================================================
@@ -408,40 +526,48 @@ async def analyze_quick_stream(
         document = db.query(Document).filter(Document.id == upload_result.document_id).first()
         
         async def event_generator():
-             # Basic info first
-             yield json.dumps({
-                 "type": "doc_info", 
-                 "data": {
-                     "document_id": upload_result.document_id,
-                     "filename": upload_result.filename,
-                     "tree": document.tree
-                 }
-             }) + "\n"
+            try:
+                # Basic info first
+                yield json.dumps({
+                    "type": "doc_info", 
+                    "data": {
+                        "document_id": upload_result.document_id,
+                        "filename": upload_result.filename,
+                        "tree": document.tree
+                    }
+                }) + "\n"
 
-             async for event in analysis_service.analyze_document_generator(document.original_text):
-                 # Save results to DB if it's the final result
-                 if event["type"] == "result":
-                     result = event["data"]
-                     analysis = Analysis(
+                async for event in analysis_service.analyze_document_generator(document.original_text):
+                    # Save results to DB if it's the final result
+                    if event["type"] == "result":
+                        result = event["data"]
+                        analysis = Analysis(
                         document_id=document.id,
                         timeline=result["timeline"],
                         scenarios=result["scenarios"],
                         definitions=result.get("definitions", []),
                         conflict_analysis=result.get("conflict_analysis", {}),
                         analysis_duration_ms=f"{result['duration_ms']}ms"
-                     )
-                     # We need a new DB session or careful handling for async generator? 
-                     # Actually, `db` dependency is thread-local mostly safe, but prolonged stream might be tricky.
-                     # For now, let's assume it's fine or create a fresh validation at end.
-                     # Re-querying to be safe if session detached (though usually fine in same request context)
-                     db.add(analysis)
-                     db.commit()
-                     db.refresh(analysis)
-                     
-                     # Add analysis_id to the result
-                     event["data"]["analysis_id"] = str(analysis.id)
-                 
-                 yield json.dumps(event) + "\n"
+                        )
+                        # We need a new DB session or careful handling for async generator? 
+                        # Actually, `db` dependency is thread-local mostly safe, but prolonged stream might be tricky.
+                        # For now, let's assume it's fine or create a fresh validation at end.
+                        # Re-querying to be safe if session detached (though usually fine in same request context)
+                        db.add(analysis)
+                        db.commit()
+                        db.refresh(analysis)
+                        
+                        # Add analysis_id to the result
+                        event["data"]["analysis_id"] = str(analysis.id)
+                    
+                    yield json.dumps(event) + "\n"
+            
+            except Exception as e:
+                print(f"Streaming analysis error: {str(e)}")
+                yield json.dumps({
+                    "type": "error",
+                    "message": "Analysis interrupted: " + str(e)
+                }) + "\n"
 
         return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
@@ -549,6 +675,98 @@ async def get_scenario_templates(
     
     except Exception as e:
         raise HTTPException(500, f"Failed to get templates: {str(e)}")
+
+# ============================================================================
+# VERIFICATION LOOP ENDPOINTS
+# ============================================================================
+
+@app.post("/api/verify-assertion/{document_id}")
+async def verify_assertion(
+    document_id: str,
+    assertion_text: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify a user assertion against a document using streaming SSE
+    
+    Returns Server-Sent Events stream with:
+    - thinking: Progressive analysis updates
+    - entity_found: When key terms are located
+    - conflict: Logic mismatch detected
+    - trace: Causality chain data
+    - complete: Final verdict
+    """
+    try:
+        # Get document
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+        
+        # Get latest analysis for definitions
+        latest_analysis = db.query(Analysis).filter(
+            Analysis.document_id == document_id
+        ).order_by(Analysis.created_at.desc()).first()
+        
+        definitions = latest_analysis.definitions if latest_analysis else []
+        
+        # Stream verification events
+        async def event_generator():
+            start_time = time.time()
+            
+            try:
+                # Stream events from verification service
+                async for event in verification_service.verify_assertion_stream(
+                    document_text=doc.original_text,
+                    assertion_text=assertion_text,
+                    definitions=definitions,
+                    document_tree=doc.tree
+                ):
+                    yield json.dumps(event) + "\n"
+                    
+                    # Save to database when complete
+                    if event.get("type") == "complete":
+                        duration_ms = int((time.time() - start_time) * 1000)
+                        
+                        verification = AssertionVerification(
+                            document_id=doc.id,
+                            analysis_id=latest_analysis.id if latest_analysis else None,
+                            assertion_text=assertion_text,
+                            parsed_assertion=event.get("parsed_assertion", {}),
+                            verdict=event.get("verdict", "unknown"),
+                            logic_trace=event.get("logic_trace", {}),
+                            has_conflict=event.get("verdict") == "fail",
+                            conflict_severity=event.get("logic_trace", {}).get("conflict_severity"),
+                            conflict_details=event.get("summary"),
+                            conflicting_clauses=event.get("logic_trace", {}).get("conflicting_clauses", []),
+                            verification_duration_ms=duration_ms
+                        )
+                        
+                        db.add(verification)
+                        db.commit()
+                        db.refresh(verification)
+                        
+                        # Add verification ID to final event
+                        final_event = event.copy()
+                        final_event["verification_id"] = str(verification.id)
+                        yield json.dumps(final_event) + "\n"
+            
+            except Exception as e:
+                print(f"Verification error: {str(e)}")
+                yield json.dumps({
+                    "type": "error",
+                    "message": f"Verification failed: {str(e)}"
+                }) + "\n"
+        
+        return StreamingResponse(
+            event_generator(),
+            media_type="application/x-ndjson"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Verification failed: {str(e)}")
 
 
 @app.post("/api/suggest-fixes/{analysis_id}")
@@ -702,6 +920,103 @@ async def select_suggestion(
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to record selection: {str(e)}")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to record selection: {str(e)}")
+
+# ============================================================================
+# BERTY AI CHAT ENDPOINTS
+# ============================================================================
+
+class ChatRequest(BaseModel):
+    question: str
+    document_id: str
+    analysis_id: Optional[str] = None
+    chat_history: Optional[List[Dict]] = None
+
+class ChatResponse(BaseModel):
+    answer: str
+    sections: List[str]
+    confidence: str
+    follow_up_questions: List[str]
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_with_document(
+    request: ChatRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Chat with Berty about a specific document.
+    Uses Mistral AI with document context and definitions.
+    """
+    try:
+        # Get document and analysis
+        document = db.query(Document).filter(Document.id == request.document_id).first()
+        if not document:
+            raise HTTPException(404, "Document not found")
+        
+        # Get analysis to retrieve Definitions
+        analysis = None
+        if request.analysis_id:
+            analysis = db.query(Analysis).filter(Analysis.id == request.analysis_id).first()
+        else:
+            # Try to find latest analysis for doc
+            analysis = db.query(Analysis).filter(Analysis.document_id == request.document_id).order_by(Analysis.created_at.desc()).first()
+        
+        # Get document text (or first 8k chars)
+        doc_text = document.content
+        if not doc_text and document.file_content:
+            # Fallback if content column is empty but file exists (shouldn't happen with current upload flow)
+            pass 
+        
+        # Get definitions if available
+        definitions = []
+        if analysis and analysis.definitions:
+            definitions = analysis.definitions
+            
+        # Call Mistral Service
+        mistral_service = MistralService()
+        response = await mistral_service.chat_about_document(
+            question=request.question,
+            document_text=doc_text,
+            definitions=definitions,
+            chat_history=request.chat_history
+        )
+        
+        return ChatResponse(
+            answer=response.get("answer", "I couldn't generate an answer."),
+            sections=response.get("sections", []),
+            confidence=response.get("confidence", "medium"),
+            follow_up_questions=response.get("follow_up_questions", [])
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Chat Error: {e}")
+        raise HTTPException(500, f"Chat failed: {str(e)}")
+
+@app.post("/api/logic-graph")
+async def generate_logic_graph(request: dict):
+    """
+    Generate a logic graph structure for visualization
+    Takes conflict analysis and returns nodes/edges for React Flow
+    """
+    try:
+        conflict_analysis = request.get("conflict_analysis", {})
+        expand = request.get("expand", False)
+        
+        if not conflict_analysis.get("has_conflict"):
+            return {"graph": {"nodes": [], "edges": []}}
+        
+        mistral = MistralService()
+        graph = await mistral.generate_logic_graph(conflict_analysis, expand)
+        
+        return {"graph": graph}
+        
+    except Exception as e:
+        print(f"Error generating logic graph: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 from services.docx_editor import SafeDocxEditor
 

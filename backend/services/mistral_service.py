@@ -43,7 +43,7 @@ class MistralService:
         messages = [
             {
                 "role": "user",
-                "content": f"""Extract all defined terms from this legal document.
+                "content": f"""Extract all defined terms from this legal document and categorize them.
 
 Document:
 {text}
@@ -51,11 +51,22 @@ Document:
 Find terms that are:
 1. In quotes (e.g., "Cause", "Good Reason", "Bad Leaver")
 2. Followed by definitions with "shall mean" or similar language
+3. Key concepts referenced throughout the document
+
+Categorize each term into one of these categories:
+- "parties": People, companies, or entities (e.g., "Company", "Founder", "Board")
+- "financial": Money, payments, valuations (e.g., "Purchase Price", "Fair Market Value", "Cap")
+- "time": Dates, periods, deadlines (e.g., "Effective Date", "Vesting Period", "Notice Period")
+- "conditions": Triggers, requirements, events (e.g., "Good Reason", "Cause", "Material Breach")
+- "equity": Shares, ownership terms (e.g., "Shares", "Vesting", "Bad Leaver")
+- "general": Other important terms
 
 Return ONLY a JSON array with NO other text:
 [
-  {{"term": "Cause", "definition": "fraud, embezzlement, or gross negligence...", "section": "1"}},
-  {{"term": "Good Reason", "definition": "material reduction in salary...", "section": "1.4"}}
+  {{"term": "Cause", "definition": "fraud, embezzlement, or gross negligence...", "section": "1", "category": "conditions"}},
+  {{"term": "Good Reason", "definition": "material reduction in salary...", "section": "1.4", "category": "conditions"}},
+  {{"term": "Company", "definition": "TechCorp Inc., a Delaware corporation", "section": "Preamble", "category": "parties"}},
+  {{"term": "Vesting Period", "definition": "48 months from the Effective Date", "section": "3.1", "category": "time"}}
 ]"""
             }
         ]
@@ -77,6 +88,102 @@ Return ONLY a JSON array with NO other text:
         except Exception as e:
             print(f"Error extracting definitions: {e}")
             return []
+    
+    async def generate_logic_graph(self, conflict_analysis: Dict, expand: bool = False) -> Dict:
+        """
+        Generate a logic graph structure for visualization
+        Uses LLM to identify clause relationships and dependencies
+        """
+        if not self.client or not conflict_analysis.get("has_conflict"):
+            return {"nodes": [], "edges": []}
+        
+        messages = [{
+            "role": "user",
+            "content": f"""You are analyzing a contract logic conflict. Generate a graph structure showing how clauses relate to each other.
+
+Conflict Analysis:
+{json.dumps(conflict_analysis, indent=2)}
+
+Instructions:
+1. Identify the key clauses involved (both explicit and implicit/missing)
+2. Determine the relationships between them (triggers, depends_on, contradicts, excludes)
+3. Classify each clause by type: definition, condition, consequence, or protection
+4. Mark which nodes/edges are part of the conflict path
+
+{"EXPANDED MODE: Include all related clauses, not just the conflict path." if expand else "SIMPLIFIED MODE: Only include clauses directly involved in the conflict."}
+
+Return ONLY a JSON object (no markdown):
+{{
+  "nodes": [
+    {{
+      "id": "clause_4_2",
+      "label": "Bad Leaver Forfeiture",
+      "type": "consequence",
+      "section_ref": "4.2",
+      "preview": "Bad Leavers shall forfeit...",
+      "is_conflict_node": true,
+      "is_implicit": false
+    }}
+  ],
+  "edges": [
+    {{
+      "from": "clause_1_1",
+      "to": "clause_4_2",
+      "type": "triggers",
+      "label": "activates",
+      "is_conflict_edge": false
+    }}
+  ]
+}}
+
+Node types: definition, condition, consequence, protection
+Edge types: triggers, depends_on, contradicts, excludes
+"""
+        }]
+        
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.complete,
+                model=self.model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=2000
+            )
+            
+            content = response.choices[0].message.content
+            content = self._clean_json_response(content)
+            graph = json.loads(content)
+            
+            return graph
+            
+        except Exception as e:
+            print(f"Error generating logic graph: {e}")
+            # Fallback: create a simple graph from affected_sections
+            affected = conflict_analysis.get("affected_sections", [])
+            nodes = [
+                {
+                    "id": f"clause_{sec.replace('.', '_')}",
+                    "label": f"Section {sec}",
+                    "type": "definition",
+                    "section_ref": sec,
+                    "preview": "",
+                    "is_conflict_node": True,
+                    "is_implicit": False
+                }
+                for sec in affected[:3]  # Limit to 3 nodes
+            ]
+            
+            edges = []
+            if len(nodes) >= 2:
+                edges.append({
+                    "from": nodes[0]["id"],
+                    "to": nodes[1]["id"],
+                    "type": "contradicts",
+                    "label": "conflicts with",
+                    "is_conflict_edge": True
+                })
+            
+            return {"nodes": nodes, "edges": edges}
     
     async def analyze_conflicts(self, text: str, definitions: List[Dict]) -> Dict:
         """
@@ -379,3 +486,310 @@ Return ONLY a JSON array with this exact structure:
                 "description": "Founder retires after 10 years of service"
             }
         ]
+
+    async def parse_assertion(self, assertion_text: str) -> Dict:
+        """
+        Parse natural language assertion into structured format
+        
+        Example:
+        Input: "Founder keeps shares if Good Reason"
+        Output: {
+            "entities": ["Founder", "shares", "Good Reason"],
+            "condition": "if Good Reason",
+            "expected_outcome": "Founder keeps shares",
+            "assertion_type": "conditional"
+        }
+        """
+        if not self.client:
+            return {
+                "entities": [],
+                "condition": "",
+                "expected_outcome": assertion_text,
+                "assertion_type": "unknown"
+            }
+        
+        messages = [{
+            "role": "user",
+            "content": f"""Parse this business assertion about a legal contract into structured components.
+
+Assertion: "{assertion_text}"
+
+Extract:
+1. Key entities (people, roles, assets mentioned)
+2. Conditions (if any)
+3. Expected outcome/behavior
+4. Assertion type (conditional, absolute, prohibition, requirement)
+
+Return ONLY a JSON object:
+{{
+  "entities": ["Founder", "shares", "Good Reason"],
+  "condition": "if Good Reason",
+  "expected_outcome": "Founder keeps shares",
+  "assertion_type": "conditional",
+  "negation": false
+}}
+"""
+        }]
+        
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.complete,
+                model=self.model,
+                messages=messages,
+                temperature=0.1
+            )
+            
+            content = response.choices[0].message.content
+            content = self._clean_json_response(content)
+            return json.loads(content)
+        
+        except Exception as e:
+            print(f"Error parsing assertion: {e}")
+            return {
+                "entities": [],
+                "condition": "",
+                "expected_outcome": assertion_text,
+                "assertion_type": "unknown"
+            }
+    
+    async def find_relevant_clauses(
+        self,
+        document_text: str,
+        parsed_assertion: Dict
+    ) -> List[Dict]:
+        """
+        Find clauses in document relevant to the assertion
+        """
+        if not self.client:
+            return []
+        
+        entities_str = ", ".join(parsed_assertion.get("entities", []))
+        
+        messages = [{
+            "role": "user",
+            "content": f"""Find all clauses in this document relevant to these entities and conditions.
+
+Document (first 8000 chars):
+{document_text[:8000]}
+
+Entities to search for: {entities_str}
+Condition: {parsed_assertion.get('condition', 'N/A')}
+Expected outcome: {parsed_assertion.get('expected_outcome', '')}
+
+Return ONLY a JSON array of relevant clauses:
+[
+  {{
+    "section": "4.2",
+    "text": "Full clause text here...",
+    "relevance": "high|medium|low",
+    "reason": "Why this clause is relevant"
+  }}
+]
+"""
+        }]
+        
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.complete,
+                model=self.model,
+                messages=messages,
+                temperature=0.2
+            )
+            
+            content = response.choices[0].message.content
+            content = self._clean_json_response(content)
+            clauses = json.loads(content)
+            
+            return clauses if isinstance(clauses, list) else []
+        
+        except Exception as e:
+            print(f"Error finding relevant clauses: {e}")
+            return []
+    
+    async def analyze_assertion_conflict(
+        self,
+        parsed_assertion: Dict,
+        logic_trace: Dict,
+        document_text: str
+    ) -> Dict:
+        """
+        Analyze if assertion conflicts with document logic
+        """
+        if not self.client:
+            return {
+                "has_conflict": False,
+                "severity": "unknown",
+                "details": "AI service not available",
+                "clauses": [],
+                "summary": "Cannot verify without AI service"
+            }
+        
+        chain_summary = "\n".join([
+            f"- {node['node']}: {node['text'][:100]}..."
+            for node in logic_trace.get("chain", [])[:5]
+        ])
+        
+        messages = [{
+            "role": "user",
+            "content": f"""Analyze if this business assertion conflicts with the contract logic.
+
+Assertion: "{parsed_assertion.get('expected_outcome', '')}"
+Condition: {parsed_assertion.get('condition', 'None')}
+
+Logic Chain Found:
+{chain_summary}
+
+Document Context (first 6000 chars):
+{document_text[:6000]}
+
+Determine:
+1. Does the assertion match what the contract actually says?
+2. Are there any conflicting clauses?
+3. What is the severity of any mismatch?
+
+Return ONLY a JSON object:
+{{
+  "has_conflict": true,
+  "severity": "high",
+  "details": "Section 4.2 classifies voluntary resignation as Bad Leaver without checking Good Reason from Section 1.4",
+  "clauses": ["4.2", "1.4"],
+  "summary": "Assertion fails: Founder would lose shares even with Good Reason",
+  "actual_outcome": "Founder forfeits all shares",
+  "expected_outcome": "Founder keeps vested shares"
+}}
+
+If no conflict:
+{{
+  "has_conflict": false,
+  "severity": "low",
+  "details": "Assertion matches contract logic",
+  "clauses": [],
+  "summary": "Verification passed"
+}}
+"""
+        }]
+        
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.complete,
+                model=self.model,
+                messages=messages,
+                temperature=0.2
+            )
+            
+            content = response.choices[0].message.content
+            content = self._clean_json_response(content)
+            return json.loads(content)
+        
+        except Exception as e:
+            print(f"Error analyzing assertion conflict: {e}")
+            return {
+                "has_conflict": False,
+                "severity": "unknown",
+                "details": f"Analysis error: {str(e)}",
+                "clauses": [],
+                "summary": "Error during verification"
+            }
+
+    async def chat_about_document(
+        self, 
+        question: str, 
+        document_text: str, 
+        definitions: List[Dict] = None,
+        chat_history: List[Dict] = None
+    ) -> Dict:
+        """
+        Answer questions about a specific document (Berty Q&A).
+        Returns answer with relevant section references.
+        """
+        if not self.client:
+            return {
+                "answer": "AI service is not configured. Please set the MISTRAL_API_KEY.",
+                "sections": [],
+                "confidence": "low"
+            }
+        
+        # Build definitions context
+        definitions_text = ""
+        if definitions:
+            definitions_text = "Key Definitions:\n" + "\n".join([
+                f'- "{d.get("term", "")}": {d.get("definition", "")[:100]}'
+                for d in definitions[:10]
+            ])
+        
+        # Build chat history context
+        history_text = ""
+        if chat_history:
+            history_text = "Previous conversation:\n" + "\n".join([
+                f"User: {msg['question']}\nBerty: {msg['answer'][:200]}..."
+                for msg in chat_history[-3:]  # Last 3 exchanges
+            ])
+        
+        messages = [
+            {
+                "role": "system",
+                "content": """You are Berty, an expert legal AI assistant for contract analysis.
+You answer questions about legal documents with precision and cite specific sections.
+Always reference the exact section number when discussing clauses.
+Be concise but thorough. If something is not in the document, say so clearly.
+Format your response in a friendly, professional tone."""
+            },
+            {
+                "role": "user",
+                "content": f"""Answer this question about the following legal document.
+
+Document (first 8000 chars):
+{document_text[:8000]}
+
+{definitions_text}
+
+{history_text}
+
+Question: {question}
+
+Provide your answer in JSON format:
+{{
+  "answer": "Your detailed answer here. Cite sections like 'Section 4.2 states...' when relevant.",
+  "sections": ["4.2", "1.4"],  // Array of section numbers referenced in your answer
+  "confidence": "high" | "medium" | "low",
+  "follow_up_questions": ["Optional suggested follow-up question 1", "Optional question 2"]
+}}"""
+            }
+        ]
+        
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.complete,
+                model=self.model,
+                messages=messages,
+                temperature=0.2
+            )
+            
+            content = response.choices[0].message.content
+            content = self._clean_json_response(content)
+            
+            try:
+                result = json.loads(content)
+                return {
+                    "answer": result.get("answer", content),
+                    "sections": result.get("sections", []),
+                    "confidence": result.get("confidence", "medium"),
+                    "follow_up_questions": result.get("follow_up_questions", [])
+                }
+            except json.JSONDecodeError:
+                # If not valid JSON, return raw text as answer
+                return {
+                    "answer": content,
+                    "sections": [],
+                    "confidence": "medium",
+                    "follow_up_questions": []
+                }
+        
+        except Exception as e:
+            print(f"Error in chat_about_document: {e}")
+            return {
+                "answer": f"I encountered an error processing your question. Please try again.",
+                "sections": [],
+                "confidence": "low",
+                "error": str(e)
+            }
