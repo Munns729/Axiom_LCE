@@ -195,6 +195,9 @@ const InteractiveDealVerifier = () => {
                                 ...prev,
                                 verdict: event.verdict,
                                 summary: event.summary,
+                                details: event.details,
+                                actualOutcome: event.actual_outcome,
+                                expectedOutcome: event.expected_outcome,
                                 logicTrace: event.logic_trace,
                                 parsedAssertion: event.parsed_assertion,
                                 verificationId: event.verification_id
@@ -203,10 +206,12 @@ const InteractiveDealVerifier = () => {
 
                             if (event.verdict === 'pass') {
                                 toast.success('Assertion verified successfully!');
+                            } else if (event.verdict === 'warning') {
+                                toast.warning('Verified with caveats');
                             } else if (event.verdict === 'fail') {
                                 toast.error('Assertion failed verification');
                             } else {
-                                toast.info('Verification complete (ambiguous result)');
+                                toast.info('Verification complete');
                             }
                         }
                     } catch (e) {
@@ -1013,22 +1018,54 @@ const InteractiveDealVerifier = () => {
                         {/* Verification Result Summary */}
                         {verificationResult?.verdict && (
                             <div className={`mt-6 rounded-lg p-4 shadow-sm ${verificationResult.verdict === 'pass'
-                                    ? 'bg-emerald-50 border border-emerald-200'
+                                ? 'bg-emerald-50 border border-emerald-200'
+                                : verificationResult.verdict === 'warning'
+                                    ? 'bg-amber-50 border border-amber-200'
                                     : 'bg-red-50 border border-red-200'
                                 }`}>
                                 <div className="flex items-start gap-3">
                                     <span className="text-2xl">
-                                        {verificationResult.verdict === 'pass' ? '✅' : '❌'}
+                                        {verificationResult.verdict === 'pass' ? '✅' :
+                                            verificationResult.verdict === 'warning' ? '⚠️' : '❌'}
                                     </span>
                                     <div className="flex-1">
-                                        <h4 className={`font-semibold mb-1 ${verificationResult.verdict === 'pass' ? 'text-emerald-900' : 'text-red-900'
+                                        <h4 className={`font-semibold mb-1 ${verificationResult.verdict === 'pass' ? 'text-emerald-900' :
+                                            verificationResult.verdict === 'warning' ? 'text-amber-900' : 'text-red-900'
                                             }`}>
-                                            {verificationResult.verdict === 'pass' ? 'Assertion Verified' : 'Assertion Failed'}
+                                            {verificationResult.verdict === 'pass' ? 'Assertion Verified' :
+                                                verificationResult.verdict === 'warning' ? 'Verified with Caveats' : 'Assertion Failed'}
                                         </h4>
-                                        <p className={`text-sm ${verificationResult.verdict === 'pass' ? 'text-emerald-700' : 'text-red-700'
+                                        <p className={`text-sm ${verificationResult.verdict === 'pass' ? 'text-emerald-700' :
+                                                verificationResult.verdict === 'warning' ? 'text-amber-700' : 'text-red-700'
                                             }`}>
                                             {verificationResult.summary}
                                         </p>
+
+                                        {(verificationResult.details || verificationResult.actualOutcome) && (
+                                            <div className="mt-3 pt-3 border-t border-black/5 space-y-3">
+                                                {verificationResult.details && (
+                                                    <div>
+                                                        <h5 className="text-xs font-bold uppercase tracking-wider opacity-60 mb-1">Detailed Reasoning</h5>
+                                                        <p className="text-sm italic">{verificationResult.details}</p>
+                                                    </div>
+                                                )}
+
+                                                <div className="grid grid-cols-2 gap-4 pt-2">
+                                                    {verificationResult.expectedOutcome && (
+                                                        <div className="bg-white/40 rounded p-2">
+                                                            <h5 className="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1 text-slate-500">Assertion Expected</h5>
+                                                            <p className="text-xs font-semibold text-slate-700">{verificationResult.expectedOutcome}</p>
+                                                        </div>
+                                                    )}
+                                                    {verificationResult.actualOutcome && (
+                                                        <div className="bg-white/60 rounded p-2 border border-black/5">
+                                                            <h5 className="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1 text-slate-500">Contract Outcome</h5>
+                                                            <p className="text-xs font-bold text-slate-900">{verificationResult.actualOutcome}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

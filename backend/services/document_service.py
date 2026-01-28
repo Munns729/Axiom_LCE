@@ -14,7 +14,7 @@ class DocumentService:
         try:
             doc = Document(io.BytesIO(file_content))
             paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-            text = "\\n\\n".join(paragraphs)
+            text = "\n\n".join(paragraphs)
             return text
         except Exception as e:
             raise ValueError(f"Error parsing DOCX: {str(e)}")
@@ -32,7 +32,7 @@ class DocumentService:
                 if page_text.strip():
                     text_parts.append(page_text)
             
-            text = "\\n\\n".join(text_parts)
+            text = "\n\n".join(text_parts)
             return text
         except Exception as e:
             raise ValueError(f"Error parsing PDF: {str(e)}")
@@ -199,9 +199,39 @@ class DocumentService:
                         current_article["children"].append(node)
                     else:
                         root["children"].append(node)
-                        
-        full_text = "\\n\\n".join(paragraphs_text)
+            
+            # --- Clause Classification ---
+            node["clause_type"] = DocumentService._detect_clause_type(text)
+
+        full_text = "\n\n".join(paragraphs_text)
         return full_text, root
+
+    @staticmethod
+    def _detect_clause_type(text: str) -> str:
+        """Simple heuristic to classify clause type"""
+        text_lower = text.lower()
+        
+        # Conditions
+        if any(w in text_lower for w in ["if ", "unless", "provided that", "subject to", "condition"]):
+            return "condition"
+            
+        # Obligations
+        if any(w in text_lower for w in ["shall", "must", "agree to", "agrees to", "will"]):
+            return "obligation"
+            
+        # Rights / Permissions
+        if any(w in text_lower for w in ["may", "entitled to", "right to", "option to"]):
+            return "right"
+            
+        # Representations
+        if any(w in text_lower for w in ["represents", "warrants", "representation", "warranty"]):
+             return "representation"
+             
+        # Definitions
+        if any(w in text_lower for w in ["means", "defined as", "meaning"]):
+            return "definition"
+            
+        return "general"
 
     @staticmethod
     def format_file_size(size_bytes: int) -> str:

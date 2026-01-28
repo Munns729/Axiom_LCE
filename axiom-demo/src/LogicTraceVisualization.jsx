@@ -55,7 +55,7 @@ const LogicTraceVisualization = ({ logicTrace, verdict }) => {
                     nodeColor = '#f56565'; // red for fail
                     borderColor = '#f56565';
                 } else {
-                    nodeColor = '#ecc94b'; // yellow for ambiguous
+                    nodeColor = '#ecc94b'; // yellow for caveats/warnings
                     borderColor = '#ecc94b';
                 }
             }
@@ -155,8 +155,16 @@ const LogicTraceVisualization = ({ logicTrace, verdict }) => {
                         Clause
                     </span>
                     <span className="legend-item">
-                        <span className="legend-dot" style={{ background: verdict === 'pass' ? '#48bb78' : '#f56565' }}></span>
-                        Result
+                        <span className="legend-dot" style={{ background: '#48bb78' }}></span>
+                        Pass
+                    </span>
+                    <span className="legend-item">
+                        <span className="legend-dot" style={{ background: '#ecc94b' }}></span>
+                        Caveat
+                    </span>
+                    <span className="legend-item">
+                        <span className="legend-dot" style={{ background: '#f56565' }}></span>
+                        Conflict
                     </span>
                 </div>
             </div>

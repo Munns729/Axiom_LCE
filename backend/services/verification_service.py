@@ -35,7 +35,7 @@ class VerificationService:
         - {"type": "entity_found", "entity": "...", "location": "..."}
         - {"type": "conflict", "severity": "...", "details": "..."}
         - {"type": "trace", "chain": [...]}
-        - {"type": "complete", "verdict": "pass|fail|ambiguous", "summary": "..."}
+        - {"type": "complete", "verdict": "pass|fail|warning", "summary": "..."}
         """
         start_time = time.time()
         
@@ -124,12 +124,23 @@ class VerificationService:
             }
         
         # Step 6: Final verdict
-        verdict = "fail" if conflict_result["has_conflict"] else "pass"
+        # Map Mistral verdict to frontend verdict (pass, warning, fail)
+        mistral_verdict = conflict_result.get("verdict", "match")
+        
+        if mistral_verdict == "match":
+            final_verdict = "pass"
+        elif mistral_verdict == "caveat":
+            final_verdict = "warning"
+        else:
+            final_verdict = "fail"
         
         yield {
             "type": "complete",
-            "verdict": verdict,
+            "verdict": final_verdict,
             "summary": conflict_result.get("summary", "Verification complete"),
+            "details": conflict_result.get("details", ""),
+            "actual_outcome": conflict_result.get("actual_outcome", ""),
+            "expected_outcome": conflict_result.get("expected_outcome", ""),
             "duration_ms": int((time.time() - start_time) * 1000),
             "logic_trace": logic_trace,
             "parsed_assertion": parsed_assertion
@@ -162,21 +173,34 @@ class VerificationService:
         Find where an entity is defined or mentioned in the document
         Returns section reference or None
         """
-        # First check definitions
+        # Normalize entity for searching
+        entity_norm = entity.strip().lower()
+        if not entity_norm:
+            return None
+
+        # 1. Check definitions with better matching
         for defn in definitions:
-            if entity.lower() in defn.get("term", "").lower():
+            term = defn.get("term", "").lower()
+            # Exact match or term starts/ends with entity
+            if entity_norm == term or f" {entity_norm} " in f" {term} " or term.startswith(entity_norm):
                 return f"Definition: {defn.get('section', 'Unknown')}"
         
-        # Then search document text (simple regex for now)
-        # In production, use AST node IDs
-        pattern = re.compile(rf'\b{re.escape(entity)}\b', re.IGNORECASE)
+        # 2. Search document text (case-insensitive boundary match)
+        # Try exact match first
+        pattern = re.compile(rf'\b{re.escape(entity_norm)}\b', re.IGNORECASE)
         match = pattern.search(document_text)
         
         if match:
-            # Find approximate section (simplified)
-            context_start = max(0, match.start() - 50)
-            context = document_text[context_start:match.start() + 50]
+            # Find approximate context
+            start = max(0, match.start() - 40)
+            end = min(len(document_text), match.end() + 40)
+            context = document_text[start:end].replace('\n', ' ').strip()
             return f"Found in context: ...{context}..."
+        
+        # 3. Fallback: check if entity is part of a longer word in document (less strict)
+        if len(entity_norm) > 3:
+             if entity_norm in document_text.lower():
+                 return "Found as part of a term in document"
         
         return None
     

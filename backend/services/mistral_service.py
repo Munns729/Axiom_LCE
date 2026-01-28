@@ -6,10 +6,13 @@ Uses Mistral Small API (European, GDPR-compliant)
 import os
 import json
 import asyncio
+import time
 from mistralai import Mistral
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from pathlib import Path
+from functools import wraps
+
 
 # Load environment variables
 env_path = Path(__file__).resolve().parent.parent.parent / '.env'
@@ -377,7 +380,8 @@ Return ONLY a JSON array with this exact structure:
         ]
         
         try:
-            response = self.client.chat.complete(
+            response = await asyncio.to_thread(
+                self.client.chat.complete,
                 model=self.model,
                 messages=messages,
                 temperature=0.3 # Slightly higher for creative alternatives
@@ -631,7 +635,7 @@ Return ONLY a JSON array of relevant clauses:
         
         messages = [{
             "role": "user",
-            "content": f"""Analyze if this business assertion conflicts with the contract logic.
+            "content": f"""Analyze if this business assertion is supported by, cautioned against, or contradicted by the contract logic.
 
 Assertion: "{parsed_assertion.get('expected_outcome', '')}"
 Condition: {parsed_assertion.get('condition', 'None')}
@@ -643,29 +647,23 @@ Document Context (first 6000 chars):
 {document_text[:6000]}
 
 Determine:
-1. Does the assertion match what the contract actually says?
-2. Are there any conflicting clauses?
-3. What is the severity of any mismatch?
+1. SUPPORTED (Match): The contract explicitly or implicitly supports this assertion.
+2. CAUTIONED (Caveat): The assertion is generally true, but is subject to a specific override, exception, or condition found in another clause.
+3. CONTRADICTED (Conflict): The contract directly contradicts the assertion or makes it impossible.
 
 Return ONLY a JSON object:
 {{
-  "has_conflict": true,
-  "severity": "high",
-  "details": "Section 4.2 classifies voluntary resignation as Bad Leaver without checking Good Reason from Section 1.4",
+  "verdict": "match" | "caveat" | "conflict",
+  "has_conflict": true,  // Set to true if CONTRADICTED or high-severity CAVEAT
+  "severity": "high" | "medium" | "low",
+  "details": "Explain the reasoning. If caveat/conflict, name the specific clauses involved.",
   "clauses": ["4.2", "1.4"],
-  "summary": "Assertion fails: Founder would lose shares even with Good Reason",
-  "actual_outcome": "Founder forfeits all shares",
-  "expected_outcome": "Founder keeps vested shares"
+  "summary": "User-friendly summary of the finding",
+  "actual_outcome": "What really happens in the contract",
+  "expected_outcome": "What the user thought would happen"
 }}
 
-If no conflict:
-{{
-  "has_conflict": false,
-  "severity": "low",
-  "details": "Assertion matches contract logic",
-  "clauses": [],
-  "summary": "Verification passed"
-}}
+If the contract logic supports the assertion (even if other non-related things are complex), return "match" and has_conflict=false.
 """
         }]
         
