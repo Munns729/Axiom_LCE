@@ -1,0 +1,189 @@
+.assertion-input-container {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+}
+
+.assertion-input-header h3 {
+    color: white;
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+}
+
+.assertion-input-subtitle {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    margin: 0 0 24px 0;
+}
+
+.assertion-input-subtitle em {
+    font-style: italic;
+    font-weight: 600;
+    color: #ffd700;
+}
+
+.assertion-input-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.assertion-textarea-wrapper {
+    position: relative;
+}
+
+.assertion-textarea {
+    width: 100%;
+    padding: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.95);
+    font-size: 16px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    resize: vertical;
+    min-height: 80px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.assertion-textarea:focus {
+    outline: none;
+    border-color: #ffd700;
+    background: white;
+    box-shadow: 0 6px 20px rgba(255, 215, 0, 0.3);
+}
+
+.assertion-textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.assertion-textarea::placeholder {
+    color: #999;
+    font-style: italic;
+}
+
+.assertion-input-hint {
+    margin-top: 8px;
+    font-size: 13px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.hint-normal {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.hint-warning {
+    color: #ffd700;
+    font-weight: 600;
+}
+
+.hint-normal kbd {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.assertion-submit-btn {
+    align-self: flex-start;
+    padding: 14px 32px;
+    background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+    color: #333;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+}
+
+.assertion-submit-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 215, 0, 0.6);
+}
+
+.assertion-submit-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.assertion-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.verify-icon {
+    font-size: 20px;
+}
+
+.spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #333;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.assertion-examples {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.examples-header {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.examples-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.example-chip {
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+}
+
+.example-chip:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: #ffd700;
+    transform: translateY(-2px);
+}
+
+.example-chip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.example-chip:active:not(:disabled) {
+    transform: translateY(0);
+}

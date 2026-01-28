@@ -14,11 +14,17 @@ import {
     Clock,
     ShieldCheck,
     LayoutTemplate,
-    FileUp
+    FileUp,
+    Download,
+    BookOpen,
+    Send
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ScenarioTestPanel from './ScenarioTestPanel';
 import ContractRenderer from './ContractRenderer';
+import LogicCircuit from './LogicCircuit';
+import AssertionInput from './AssertionInput';
+import LogicTraceVisualization from './LogicTraceVisualization';
 
 const InteractiveDealVerifier = () => {
     const [isRunning, setIsRunning] = useState(false);
@@ -35,11 +41,79 @@ const InteractiveDealVerifier = () => {
     const [file, setFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
 
     const bottomRef = useRef(null);
 
     // Initial scenario tests - Start Empty
     const [scenarioTestsState, setScenarioTestsState] = useState([]);
+    const [definitionsState, setDefinitionsState] = useState([]);
+
+    // Chat state
+    const [chatHistory, setChatHistory] = useState([]);
+    const [chatInput, setChatInput] = useState('');
+    const [isChatLoading, setIsChatLoading] = useState(false);
+    const chatEndRef = useRef(null);
+
+    // Verification state
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [verificationResult, setVerificationResult] = useState(null);
+    const [verificationTimeline, setVerificationTimeline] = useState([]);
+
+    const scrollToBottom = () => {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [chatHistory, activeTab]);
+
+    const handleSendMessage = async (e) => {
+        e.preventDefault();
+        if (!chatInput.trim() || isChatLoading) return;
+
+        const userMessage = { role: 'user', content: chatInput };
+        setChatHistory(prev => [...prev, userMessage]);
+        setChatInput('');
+        setIsChatLoading(true);
+
+        try {
+            const response = await fetch('http://localhost:8000/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    question: userMessage.content,
+                    document_id: analyzedDoc?.id,
+                    analysis_id: analyzedDoc?.analysisId,
+                    chat_history: chatHistory.map(msg => ({
+                        question: msg.role === 'user' ? msg.content : '',
+                        answer: msg.role === 'assistant' ? msg.content : ''
+                    })).filter(msg => msg.question || msg.answer)
+                })
+            });
+
+            if (!response.ok) throw new Error('Failed to get answer');
+
+            const data = await response.json();
+            const botMessage = {
+                role: 'assistant',
+                content: data.answer,
+                sections: data.sections,
+                confidence: data.confidence
+            };
+            setChatHistory(prev => [...prev, botMessage]);
+        } catch (error) {
+            console.error('Chat error:', error);
+            setChatHistory(prev => [...prev, {
+                role: 'assistant',
+                content: 'I apologize, but I encountered an error while analyzing the document using Berty AI. Please try again.',
+                isError: true
+            }]);
+        } finally {
+            setIsChatLoading(false);
+        }
+    };
 
     const [progress, setProgress] = useState(0);
     const [progressStatus, setProgressStatus] = useState("Initializing...");
@@ -49,11 +123,95 @@ const InteractiveDealVerifier = () => {
         toast.success('Custom scenario added!');
     };
 
+    // Drag and drop handlers
+    const handleDragEnter = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only set to false if we're leaving the drop zone entirely
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        setIsDragging(false);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            const droppedFile = files[0];
+            const validTypes = ['.docx', '.pdf', '.txt'];
+            const fileExt = '.' + droppedFile.name.split('.').pop().toLowerCase();
+
+            if (!validTypes.includes(fileExt)) {
+                toast.error('Please upload a .docx, .pdf, or .txt file');
+                return;
+            }
+
+            setFile(droppedFile);
+            setUploadError(null);
+            setAnalyzedDoc(null);
+            setTimelineItems([]);
+            setScenarioTestsState([]);
+            setScanComplete(false);
+            setIsRunning(false);
+            toast.success(`File "${droppedFile.name}" ready for analysis`);
+        }
+    };
+
+    // Export handler
+    const handleExport = async () => {
+        if (!analyzedDoc?.id) {
+            toast.error('No document to export');
+            return;
+        }
+
+        setIsExporting(true);
+        try {
+            const response = await fetch(`http://localhost:8000/api/documents/${analyzedDoc.id}/export`);
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Export failed');
+            }
+
+            // Get the blob and download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = analyzedDoc.title || 'document.docx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.success('Document exported successfully!');
+        } catch (error) {
+            console.error('Export error:', error);
+            toast.error(`Export failed: ${error.message}`);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     // Real Analysis Logic
     const startVerification = async () => {
         setIsRunning(true);
         setTimelineItems([]);
         setScenarioTestsState([]);
+        setDefinitionsState([]);
         setExpandedTrace(false);
         setScanComplete(false);
         setUploadError(null);
@@ -104,7 +262,9 @@ const InteractiveDealVerifier = () => {
                         try {
                             const event = JSON.parse(line);
 
-                            if (event.type === 'progress') {
+                            if (event.type === 'error') {
+                                throw new Error(event.message || 'Analysis reported an error');
+                            } else if (event.type === 'progress') {
                                 setProgress(event.percent);
                                 setProgressStatus(event.stage);
                             } else if (event.type === 'timeline_step') {
@@ -117,8 +277,13 @@ const InteractiveDealVerifier = () => {
                                 });
                             } else if (event.type === 'result') {
                                 const data = event.data;
-                                setAnalyzedDoc(prev => ({ ...prev, analysisId: data.analysis_id }));
-                                setScenarioTestsState(data.scenarios);
+                                setAnalyzedDoc(prev => ({
+                                    ...prev,
+                                    analysisId: data.analysis_id,
+                                    conflictAnalysis: data.conflict_analysis
+                                }));
+                                setScenarioTestsState(data.scenarios || []);
+                                setDefinitionsState(data.definitions || []);
                                 setScanComplete(true);
                                 setIsRunning(false);
                                 toast.success('Analysis complete!');
@@ -220,6 +385,33 @@ const InteractiveDealVerifier = () => {
                                     </>
                                 )}
                             </button>
+
+                            {/* Export Button */}
+                            {analyzedDoc && (
+                                <button
+                                    onClick={handleExport}
+                                    disabled={isExporting || isRunning}
+                                    className={`
+                                        px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center gap-2
+                                        ${isExporting || isRunning
+                                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-200 hover:-translate-y-0.5'
+                                        }
+                                    `}
+                                >
+                                    {isExporting ? (
+                                        <>
+                                            <Clock className="w-4 h-4 animate-spin" />
+                                            <span>Exporting...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="w-4 h-4" />
+                                            <span>Export</span>
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
                         {uploadError && (
                             <div className="mt-2 text-xs text-red-600 bg-red-50 px-3 py-1 rounded">
@@ -230,7 +422,7 @@ const InteractiveDealVerifier = () => {
                 </header>
 
                 {/* Document Canvas */}
-                <div className="flex-1 overflow-y-auto relative flex justify-center py-12 px-8 custom-scrollbar bg-slate-100/50">
+                <div className="flex-1 overflow-y-auto relative py-6 px-4 custom-scrollbar bg-slate-100/50">
                     {/* Progress Overlay */}
                     {isRunning && (
                         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-white/90 backdrop-blur-md px-6 py-4 rounded-2xl shadow-xl border border-indigo-100 flex flex-col items-center gap-2 min-w-[300px] animate-in fade-in slide-in-from-top-4">
@@ -248,32 +440,82 @@ const InteractiveDealVerifier = () => {
                     )}
 
                     {!analyzedDoc ? (
-                        // Empty State
-                        <div className="flex flex-col items-center justify-center w-full max-w-[850px] min-h-[600px] border-2 border-dashed border-slate-300 rounded-2xl bg-white/50 hover:bg-white transition-colors mt-8">
-                            <div className="w-16 h-16 bg-white rounded-full shadow-lg flex items-center justify-center mb-6">
-                                <FileUp className="w-8 h-8 text-indigo-500" />
+                        // Empty State - Drop Zone
+                        <div
+                            className={`flex flex-col items-center justify-center w-full max-w-[900px] mx-auto min-h-[500px] border-2 border-dashed rounded-2xl transition-all duration-200 mt-4 ${isDragging
+                                ? 'border-indigo-500 bg-indigo-50 scale-[1.02]'
+                                : 'border-slate-300 bg-white/50 hover:bg-white hover:border-slate-400'
+                                }`}
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                        >
+                            <div className={`w-16 h-16 rounded-full shadow-lg flex items-center justify-center mb-6 transition-colors ${uploadError ? 'bg-red-100' : isDragging ? 'bg-indigo-100' : 'bg-white'}`}>
+                                {uploadError ? (
+                                    <AlertTriangle className="w-8 h-8 text-red-500" />
+                                ) : (
+                                    <FileUp className={`w-8 h-8 transition-colors ${isDragging ? 'text-indigo-600' : 'text-indigo-500'}`} />
+                                )}
                             </div>
-                            <h3 className="text-xl font-bold text-slate-900 mb-2">Upload a Contract to Begin</h3>
-                            <p className="text-slate-500 mb-8 text-center max-w-sm">
-                                Supported formats: .docx, .pdf, .txt
-                            </p>
-                            <label
-                                htmlFor="file-upload"
-                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5 cursor-pointer block text-center"
-                            >
-                                Select Document
-                            </label>
+
+                            {uploadError ? (
+                                <>
+                                    <h3 className="text-xl font-bold text-red-700 mb-2">
+                                        Analysis Failed
+                                    </h3>
+                                    <p className="text-red-600/80 mb-8 text-center max-w-sm">
+                                        {uploadError}
+                                    </p>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => { setUploadError(null); setFile(null); }}
+                                            className="px-6 py-3 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl border border-slate-200 shadow-sm transition-all"
+                                        >
+                                            Reset
+                                        </button>
+                                        {file && (
+                                            <button
+                                                onClick={startVerification}
+                                                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-200 transition-all hover:-translate-y-0.5"
+                                            >
+                                                Retry Analysis
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <h3 className="text-xl font-bold text-slate-900 mb-2">
+                                        {isDragging ? 'Drop your file here!' : 'Upload a Contract to Begin'}
+                                    </h3>
+                                    <p className="text-slate-500 mb-8 text-center max-w-sm">
+                                        {isDragging ? 'Release to upload' : 'Drag & drop or click to select • .docx, .pdf, .txt'}
+                                    </p>
+                                    {!isDragging && (
+                                        <label
+                                            htmlFor="file-upload"
+                                            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5 cursor-pointer block text-center"
+                                        >
+                                            Select Document
+                                        </label>
+                                    )}
+                                </>
+                            )}
                         </div>
                     ) : (
                         // Real Document View - IMPROVED CONTAINER
-                        <div className="w-full max-w-[850px] bg-white shadow-lg shadow-slate-200/50 border border-slate-200 min-h-[100vh] p-12 md:p-[96px] relative text-slate-800 font-serif leading-8 text-[1.1rem] rounded-sm transition-all duration-700 mb-20">
+                        <div className="w-full max-w-[1000px] mx-auto bg-white shadow-lg shadow-slate-200/50 border border-slate-200 min-h-full p-6 md:p-10 relative text-slate-800 font-serif leading-7 text-base rounded-sm transition-all duration-700 mb-8">
                             {/* Document Header */}
-                            <div className="mb-16 text-center border-b pb-8 border-slate-100">
-                                <h1 className="text-3xl font-bold text-slate-900 mb-3 tracking-tight">{analyzedDoc.title}</h1>
+                            <div className="mb-8 text-center border-b pb-4 border-slate-100">
+                                <h1 className="text-2xl font-bold text-slate-900 mb-2 tracking-tight">{analyzedDoc.title}</h1>
                                 <p className="text-slate-400 font-sans text-xs font-medium uppercase tracking-[0.2em]">Analyzed via Axiom Spine</p>
                             </div>
 
-                            <ContractRenderer tree={analyzedDoc.tree} />
+                            <ContractRenderer
+                                tree={analyzedDoc.tree}
+                                conflictAnalysis={analyzedDoc.conflictAnalysis}
+                            />
                         </div>
                     )}
                 </div>
@@ -312,6 +554,46 @@ const InteractiveDealVerifier = () => {
                         {scenarioTestsState.length > 0 && (
                             <span className="ml-2 bg-slate-200 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-full">
                                 {scenarioTestsState.length}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('definitions')}
+                        className={`pb-3 text-sm font-medium border-b-2 transition-all ${activeTab === 'definitions'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-slate-500 border-transparent hover:text-slate-700'
+                            }`}
+                    >
+                        Definitions
+                        {definitionsState.length > 0 && (
+                            <span className="ml-2 bg-emerald-100 text-emerald-600 text-[10px] px-1.5 py-0.5 rounded-full">
+                                {definitionsState.length}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('chat')}
+                        className={`pb-3 text-sm font-medium border-b-2 transition-all ${activeTab === 'chat'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-slate-500 border-transparent hover:text-slate-700'
+                            }`}
+                    >
+                        Berty AI
+                        <span className="ml-2 bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded-full">
+                            Beta
+                        </span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('circuit')}
+                        className={`pb-3 text-sm font-medium border-b-2 transition-all ${activeTab === 'circuit'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-slate-500 border-transparent hover:text-slate-700'
+                            }`}
+                    >
+                        Logic Circuit
+                        {analyzedDoc?.conflictAnalysis?.has_conflict && (
+                            <span className="ml-2 bg-amber-100 text-amber-600 text-[10px] px-1.5 py-0.5 rounded-full">
+                                ⚡
                             </span>
                         )}
                     </button>
@@ -387,6 +669,183 @@ const InteractiveDealVerifier = () => {
                                 />
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* TAB CONTENT: DEFINITIONS */}
+                {activeTab === 'definitions' && (
+                    <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30 custom-scrollbar">
+                        {definitionsState.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center px-8 text-slate-400">
+                                <BookOpen className="w-12 h-12 mb-4 opacity-20" />
+                                <p className="text-sm">Definitions will be extracted after analysis.</p>
+                            </div>
+                        ) : (() => {
+                            // Group definitions by category
+                            const categoryConfig = {
+                                parties: { label: 'Parties & Entities', icon: '👥', color: 'blue' },
+                                financial: { label: 'Financial Terms', icon: '💰', color: 'green' },
+                                time: { label: 'Time & Deadlines', icon: '⏰', color: 'orange' },
+                                conditions: { label: 'Conditions & Events', icon: '⚡', color: 'purple' },
+                                equity: { label: 'Equity & Ownership', icon: '📊', color: 'indigo' },
+                                general: { label: 'General Terms', icon: '📋', color: 'slate' }
+                            };
+
+                            const grouped = definitionsState.reduce((acc, def) => {
+                                const cat = def.category || 'general';
+                                if (!acc[cat]) acc[cat] = [];
+                                acc[cat].push(def);
+                                return acc;
+                            }, {});
+
+                            const categoryOrder = ['parties', 'conditions', 'equity', 'financial', 'time', 'general'];
+
+                            return (
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <BookOpen className="w-5 h-5 text-emerald-600" />
+                                        <h3 className="font-bold text-slate-800">Contract Glossary</h3>
+                                        <span className="text-xs text-slate-500">({definitionsState.length} terms)</span>
+                                    </div>
+
+                                    {categoryOrder.map(category => {
+                                        const defs = grouped[category];
+                                        if (!defs || defs.length === 0) return null;
+
+                                        const config = categoryConfig[category] || categoryConfig.general;
+
+                                        return (
+                                            <div key={category} className="space-y-2">
+                                                <div className="flex items-center gap-2 py-2 border-b border-slate-200">
+                                                    <span className="text-lg">{config.icon}</span>
+                                                    <h4 className="font-semibold text-slate-700 text-sm">{config.label}</h4>
+                                                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{defs.length}</span>
+                                                </div>
+
+                                                <div className="space-y-2 pl-1">
+                                                    {defs.map((def, index) => (
+                                                        <div key={index} className="bg-white rounded-lg p-3 shadow-sm border border-slate-100 hover:border-slate-200 transition-colors">
+                                                            <div className="flex items-start gap-2">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h5 className="font-bold text-slate-900 text-sm">
+                                                                        "{def.term || 'Unknown Term'}"
+                                                                    </h5>
+                                                                    <p className="text-sm text-slate-600 leading-relaxed mt-1">
+                                                                        {def.definition || def.meaning || 'No definition provided'}
+                                                                    </p>
+                                                                    {def.section && (
+                                                                        <p className="text-xs text-slate-400 mt-1.5">
+                                                                            §{def.section}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+
+                {/* TAB CONTENT: BERTY AI CHAT */}
+                {activeTab === 'chat' && (
+                    <div className="flex-1 flex flex-col bg-slate-50/30 h-full overflow-hidden">
+                        {/* Chat Messages */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                            {chatHistory.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-center px-8 text-slate-400">
+                                    <Bot className="w-12 h-12 mb-4 opacity-20 text-indigo-500" />
+                                    <h4 className="text-slate-700 font-semibold mb-1">Ask Berty AI</h4>
+                                    <p className="text-sm">Ask questions about clauses, risks, or terms.</p>
+                                    <div className="mt-6 space-y-2 w-full max-w-xs">
+                                        <button
+                                            onClick={() => setChatInput("What are the termination conditions?")}
+                                            className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:text-indigo-600 transition-colors text-left"
+                                        >
+                                            "What are the termination conditions?"
+                                        </button>
+                                        <button
+                                            onClick={() => setChatInput("Identify any unusual liability caps.")}
+                                            className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:text-indigo-600 transition-colors text-left"
+                                        >
+                                            "Identify any unusual liability caps."
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                chatHistory.map((msg, idx) => (
+                                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[85%] rounded-2xl p-3.5 shadow-sm text-sm leading-relaxed ${msg.role === 'user'
+                                            ? 'bg-indigo-600 text-white rounded-tr-sm'
+                                            : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm'
+                                            }`}>
+                                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                                            {msg.sections && msg.sections.length > 0 && (
+                                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                                    {msg.sections.map(sec => (
+                                                        <span key={sec} className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded border border-slate-200">
+                                                            §{sec}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            {isChatLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-sm p-4 shadow-sm flex items-center gap-2">
+                                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+
+                        {/* Chat Input */}
+                        <div className="p-4 bg-white border-t border-slate-100">
+                            <form onSubmit={handleSendMessage} className="relative">
+                                <input
+                                    type="text"
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder="Ask anything about this document..."
+                                    className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm placeholder:text-slate-400"
+                                    disabled={isChatLoading || !analyzedDoc}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!chatInput.trim() || isChatLoading || !analyzedDoc}
+                                    className="absolute right-2 top-2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors"
+                                >
+                                    <Send className="w-4 h-4" />
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* TAB CONTENT: LOGIC CIRCUIT */}
+                {activeTab === 'circuit' && (
+                    <div className="flex-1 overflow-hidden">
+                        <LogicCircuit
+                            conflictAnalysis={analyzedDoc?.conflictAnalysis}
+                            onNodeClick={(sectionRef) => {
+                                // Scroll to clause in document
+                                const element = document.getElementById(`clause_${sectionRef.replace('.', '_')}`);
+                                if (element) {
+                                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                            }}
+                        />
                     </div>
                 )}
             </div>

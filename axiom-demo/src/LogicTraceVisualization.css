@@ -1,0 +1,128 @@
+.logic-trace-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    height: 600px;
+    display: flex;
+    flex-direction: column;
+}
+
+.logic-trace-header {
+    padding: 20px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.logic-trace-header h4 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.logic-trace-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid white;
+}
+
+.logic-trace-flow {
+    flex: 1;
+    position: relative;
+}
+
+.logic-node-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.logic-node-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.logic-node-text {
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: 0.95;
+}
+
+.logic-node-section {
+    font-size: 11px;
+    opacity: 0.8;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+.logic-trace-empty {
+    background: white;
+    border-radius: 12px;
+    padding: 60px 40px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.empty-text {
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.empty-subtext {
+    font-size: 14px;
+    color: #666;
+}
+
+/* React Flow overrides */
+.react-flow__node {
+    cursor: pointer;
+}
+
+.react-flow__node:hover {
+    transform: scale(1.02);
+    transition: transform 0.2s ease;
+}
+
+.react-flow__edge-path {
+    stroke-width: 2px;
+}
+
+.react-flow__controls {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+.react-flow__minimap {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
