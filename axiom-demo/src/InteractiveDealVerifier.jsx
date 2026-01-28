@@ -115,6 +115,114 @@ const InteractiveDealVerifier = () => {
         }
     };
 
+    // Verification Handler
+    const handleVerifyAssertion = async (assertionText) => {
+        if (!analyzedDoc?.id) {
+            toast.error('Please analyze a document first');
+            return;
+        }
+
+        setIsVerifying(true);
+        setVerificationTimeline([]);
+        setVerificationResult(null);
+        setActiveTab('verify');
+
+        toast.info('Verifying assertion...');
+
+        try {
+            const response = await fetch(`http://localhost:8000/api/verify-assertion/${analyzedDoc.id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assertion_text: assertionText })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Verification failed');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+
+                    try {
+                        const event = JSON.parse(line);
+
+                        if (event.type === 'error') {
+                            throw new Error(event.message || 'Verification error');
+                        } else if (event.type === 'thinking') {
+                            setVerificationTimeline(prev => [...prev, {
+                                type: 'thinking',
+                                message: event.message,
+                                timestamp: event.timestamp
+                            }]);
+                        } else if (event.type === 'entity_found') {
+                            setVerificationTimeline(prev => [...prev, {
+                                type: 'entity',
+                                entity: event.entity,
+                                location: event.location,
+                                timestamp: event.timestamp
+                            }]);
+                        } else if (event.type === 'trace') {
+                            setVerificationResult(prev => ({
+                                ...prev,
+                                logicTrace: event.chain
+                            }));
+                        } else if (event.type === 'conflict') {
+                            setVerificationResult(prev => ({
+                                ...prev,
+                                hasConflict: true,
+                                conflictDetails: event.details,
+                                conflictSeverity: event.severity,
+                                conflictingClauses: event.conflicting_clauses
+                            }));
+                            toast.warning('Logic conflict detected!');
+                        } else if (event.type === 'complete') {
+                            setVerificationResult(prev => ({
+                                ...prev,
+                                verdict: event.verdict,
+                                summary: event.summary,
+                                logicTrace: event.logic_trace,
+                                parsedAssertion: event.parsed_assertion,
+                                verificationId: event.verification_id
+                            }));
+                            setIsVerifying(false);
+
+                            if (event.verdict === 'pass') {
+                                toast.success('Assertion verified successfully!');
+                            } else if (event.verdict === 'fail') {
+                                toast.error('Assertion failed verification');
+                            } else {
+                                toast.info('Verification complete (ambiguous result)');
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error parsing verification event", e);
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('Verification error:', error);
+            toast.error(`Verification failed: ${error.message}`);
+            setIsVerifying(false);
+        }
+    };
+
+
     const [progress, setProgress] = useState(0);
     const [progressStatus, setProgressStatus] = useState("Initializing...");
 
@@ -597,6 +705,23 @@ const InteractiveDealVerifier = () => {
                             </span>
                         )}
                     </button>
+                    <button
+                        onClick={() => setActiveTab('verify')}
+                        className={`pb-3 text-sm font-medium border-b-2 transition-all ${activeTab === 'verify'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-slate-500 border-transparent hover:text-slate-700'
+                            }`}
+                    >
+                        Verify Assertion
+                        {verificationResult?.verdict && (
+                            <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${verificationResult.verdict === 'pass'
+                                ? 'bg-emerald-100 text-emerald-600'
+                                : 'bg-red-100 text-red-600'
+                                }`}>
+                                {verificationResult.verdict === 'pass' ? '✓' : '✗'}
+                            </span>
+                        )}
+                    </button>
                 </div>
 
                 {/* TAB CONTENT: VALIDATION */}
@@ -846,6 +971,78 @@ const InteractiveDealVerifier = () => {
                                 }
                             }}
                         />
+                    </div>
+                )}
+
+                {/* TAB CONTENT: VERIFY ASSERTION */}
+                {activeTab === 'verify' && (
+                    <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
+                        <AssertionInput
+                            onVerify={handleVerifyAssertion}
+                            isVerifying={isVerifying}
+                            documentId={analyzedDoc?.id}
+                        />
+
+                        {/* Verification Timeline */}
+                        {verificationTimeline.length > 0 && (
+                            <div className="mt-6 bg-white rounded-lg p-4 shadow-sm">
+                                <h4 className="text-sm font-semibold text-slate-700 mb-3">Verification Progress</h4>
+                                <div className="space-y-2">
+                                    {verificationTimeline.map((item, idx) => (
+                                        <div key={idx} className="flex items-start gap-2 text-sm">
+                                            {item.type === 'thinking' && (
+                                                <>
+                                                    <span className="text-indigo-500 mt-0.5">💭</span>
+                                                    <span className="text-slate-600">{item.message}</span>
+                                                </>
+                                            )}
+                                            {item.type === 'entity' && (
+                                                <>
+                                                    <span className="text-emerald-500 mt-0.5">✓</span>
+                                                    <span className="text-slate-700">
+                                                        Found <strong>{item.entity}</strong> → {item.location?.substring(0, 60)}
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Verification Result Summary */}
+                        {verificationResult?.verdict && (
+                            <div className={`mt-6 rounded-lg p-4 shadow-sm ${verificationResult.verdict === 'pass'
+                                    ? 'bg-emerald-50 border border-emerald-200'
+                                    : 'bg-red-50 border border-red-200'
+                                }`}>
+                                <div className="flex items-start gap-3">
+                                    <span className="text-2xl">
+                                        {verificationResult.verdict === 'pass' ? '✅' : '❌'}
+                                    </span>
+                                    <div className="flex-1">
+                                        <h4 className={`font-semibold mb-1 ${verificationResult.verdict === 'pass' ? 'text-emerald-900' : 'text-red-900'
+                                            }`}>
+                                            {verificationResult.verdict === 'pass' ? 'Assertion Verified' : 'Assertion Failed'}
+                                        </h4>
+                                        <p className={`text-sm ${verificationResult.verdict === 'pass' ? 'text-emerald-700' : 'text-red-700'
+                                            }`}>
+                                            {verificationResult.summary}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Logic Trace Visualization */}
+                        {verificationResult?.logicTrace && (
+                            <div className="mt-6">
+                                <LogicTraceVisualization
+                                    logicTrace={verificationResult.logicTrace}
+                                    verdict={verificationResult.verdict}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
