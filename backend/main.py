@@ -202,7 +202,13 @@ async def upload_document(
         if len(content) == 0:
             raise HTTPException(400, "File is empty")
         
-        # Extract text and structure
+        # --- ID NORMALIZATION (The "Loose Akoma" Enforcer) ---
+        # Ensure every paragraph has a stable ID *before* we parse or save.
+        from services.id_normalizer import IDNormalizer
+        if file.filename.lower().endswith('.docx'):
+            content = IDNormalizer.normalize_docx(content)
+        
+        # Extract text and structure (using the NORMALIZED content)
         text, tree = document_service.extract_text(file.filename, content)
         
         # Validate text length
@@ -215,12 +221,12 @@ async def upload_document(
         # Format file size
         file_size = document_service.format_file_size(len(content))
         
-        # Save to database
+        # Save to database (Save the NORMALIZED content as the source of truth)
         doc = Document(
             filename=file.filename,
             original_text=text,
             tree=tree, # Save parsed structure
-            file_content=content, # Save original binary
+            file_content=content, # Save NORMALIZED binary
             file_type=file.filename.split('.')[-1].lower(),
             file_size=file_size
         )
