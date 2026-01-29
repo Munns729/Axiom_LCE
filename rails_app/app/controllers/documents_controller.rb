@@ -60,6 +60,19 @@ class DocumentsController < ApplicationController
     end
   end
 
+  def edit
+    contract_id = params[:id]
+    operations = params[:operations]
+    
+    response = SpineClient.edit_document(contract_id, operations)
+    
+    if response.success?
+      render json: JSON.parse(response.body)
+    else
+      render json: { error: "Edit failed", details: response.body }, status: :bad_request
+    end
+  end
+
   def analyze_logic
     uploaded_file = params[:file]
     if uploaded_file.nil?

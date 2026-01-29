@@ -409,6 +409,56 @@ async def export_document(
     except Exception as e:
         raise HTTPException(500, f"Export failed: {str(e)}")
 
+@app.post("/api/documents/{document_id}/edit")
+async def edit_document(
+    document_id: str,
+    operations: List[Dict] = Body(...), # Expect JSON list of ops
+    db: Session = Depends(get_db)
+):
+    """
+    Apply structural or text edits to the document using the ComposerService.
+    Supports 'update_text' and 'split' operations.
+    """
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            raise HTTPException(404, "Document not found")
+        
+        if not doc.file_content:
+            raise HTTPException(400, "Original file content not available")
+
+        # Initialize Composer
+        from services.composer_service import ComposerService
+        composer = ComposerService(doc.file_content)
+        
+        # Apply operations (this returns new bytes)
+        # Note: ComposerService.apply_operations raises exceptions on errors
+        new_content = composer.apply_operations(operations)
+        
+        # Update the document record
+        doc.file_content = new_content
+        
+        # We should also re-extract the text and tree since functionality changed
+        # This keeps the DB in sync with the file
+        doc.original_text, doc.tree = document_service.extract_text(doc.filename, new_content)
+        
+        # Format new size
+        doc.file_size = document_service.format_file_size(len(new_content))
+        
+        db.commit()
+        db.refresh(doc)
+        
+        return {
+            "success": True,
+            "document_id": str(doc.id),
+            "new_size": len(new_content),
+            "operations_applied": len(operations)
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Edit failed: {str(e)}")
+
 # ============================================================================
 # ANALYSIS ENDPOINTS
 # ============================================================================

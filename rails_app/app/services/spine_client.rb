@@ -46,6 +46,12 @@ class SpineClient
      connection.post("/contract/#{contract_id}/refactor", body.to_json, 'Content-Type' => 'application/json')
   end
 
+  def self.edit_document(document_id, operations)
+    # Generic entry point for the "Loose Akoma" Engine
+    # operations: Array of { type: "update_text"|"split", id: "uuid", ... }
+    connection.post("/api/documents/#{document_id}/edit", operations.to_json, 'Content-Type' => 'application/json')
+  end
+
   def self.analyze_logic(file_path, original_filename, playbook_json)
     payload = {
       file: Faraday::Multipart::FilePart.new(

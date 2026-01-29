@@ -112,9 +112,12 @@ class DocumentService:
             
             # Safe ID strategy
             try:
+                from docx.oxml.ns import qn
                 if p._element is not None:
-                    para_id = p._element.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}paraId')
+                    # Use standard qualified name lookup
+                    para_id = p._element.get(qn('w:paraId'))
                     if not para_id:
+                        # Fallback if Normalizer hasn't run (should verify logic)
                         para_id = str(id(p._element))
                 else:
                     para_id = str(id(p))
